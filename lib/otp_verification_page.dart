@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 
 class OtpVerificationPage extends StatefulWidget {
   final String email;
@@ -11,58 +10,17 @@ class OtpVerificationPage extends StatefulWidget {
 }
 
 class _OtpVerificationPageState extends State<OtpVerificationPage> {
-  final List<TextEditingController> _otpControllers = List.generate(
-    6,
-    (index) => TextEditingController(),
-  );
-  final List<FocusNode> _focusNodes = List.generate(6, (index) => FocusNode());
-
   bool _isLoading = false;
 
-  @override
-  void dispose() {
-    for (var controller in _otpControllers) {
-      controller.dispose();
-    }
-    for (var node in _focusNodes) {
-      node.dispose();
-    }
-    super.dispose();
-  }
-
-  void _verifyOtp() {
-    // Get the complete OTP code
-    final String otpCode =
-        _otpControllers.map((controller) => controller.text).join();
-
-    // For now, we'll bypass actual verification
-    if (otpCode.length < 6) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please enter the complete OTP code')),
-      );
-      return;
-    }
-
+  void _proceedToHome() {
     setState(() {
       _isLoading = true;
     });
 
-    // Simulate verification delay
-    Future.delayed(const Duration(seconds: 1), () {
-      setState(() {
-        _isLoading = false;
-      });
-
-      // Navigate to home screen (using the admin home page)
+    // Simulate a brief loading state for UI feedback
+    Future.delayed(const Duration(milliseconds: 500), () {
       Navigator.of(context).pushNamedAndRemoveUntil('/home', (route) => false);
     });
-  }
-
-  void _resendOtp() {
-    // Simulate OTP resend
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('New OTP code sent to ${widget.email}')),
-    );
   }
 
   @override
@@ -74,7 +32,7 @@ class _OtpVerificationPageState extends State<OtpVerificationPage> {
         elevation: 0,
         iconTheme: IconThemeData(color: Colors.blue[700]),
         title: Text(
-          'OTP Verification',
+          'Quick Access',
           style: TextStyle(
             color: Colors.blue[800],
             fontWeight: FontWeight.bold,
@@ -88,10 +46,10 @@ class _OtpVerificationPageState extends State<OtpVerificationPage> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               const SizedBox(height: 20),
-              Icon(Icons.mail_outline, size: 80, color: Colors.blue[700]),
+              Icon(Icons.speed, size: 80, color: Colors.blue[700]),
               const SizedBox(height: 32),
               Text(
-                'Verification Code',
+                'Development Mode',
                 style: TextStyle(
                   fontSize: 24,
                   fontWeight: FontWeight.bold,
@@ -101,66 +59,15 @@ class _OtpVerificationPageState extends State<OtpVerificationPage> {
               ),
               const SizedBox(height: 16),
               Text(
-                'We have sent the verification code to\n${widget.email}',
+                'Fast login enabled for ${widget.email}',
                 style: TextStyle(fontSize: 14, color: Colors.grey[600]),
                 textAlign: TextAlign.center,
               ),
               const SizedBox(height: 48),
 
-              // OTP Input Fields
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: List.generate(
-                  6,
-                  (index) => SizedBox(
-                    width: 45,
-                    child: TextField(
-                      controller: _otpControllers[index],
-                      focusNode: _focusNodes[index],
-                      textAlign: TextAlign.center,
-                      keyboardType: TextInputType.number,
-                      maxLength: 1,
-                      style: const TextStyle(fontSize: 20),
-                      decoration: InputDecoration(
-                        counterText: '',
-                        contentPadding: EdgeInsets.zero,
-                        enabledBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(10),
-                          borderSide: BorderSide(color: Colors.grey[300]!),
-                        ),
-                        focusedBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(10),
-                          borderSide: BorderSide(
-                            color: Colors.blue[700]!,
-                            width: 2,
-                          ),
-                        ),
-                      ),
-                      inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                      onChanged: (value) {
-                        if (value.isNotEmpty && index < 5) {
-                          FocusScope.of(
-                            context,
-                          ).requestFocus(_focusNodes[index + 1]);
-                        }
-                        // Auto-verify when all digits are entered
-                        if (index == 5 && value.isNotEmpty) {
-                          if (_otpControllers.every(
-                            (controller) => controller.text.isNotEmpty,
-                          )) {
-                            _verifyOtp();
-                          }
-                        }
-                      },
-                    ),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 48),
-
-              // Verify Button
+              // Primary button to proceed directly
               ElevatedButton(
-                onPressed: _isLoading ? null : _verifyOtp,
+                onPressed: _isLoading ? null : _proceedToHome,
                 style: ElevatedButton.styleFrom(
                   backgroundColor: Colors.blue[700],
                   foregroundColor: Colors.white,
@@ -181,7 +88,7 @@ class _OtpVerificationPageState extends State<OtpVerificationPage> {
                           ),
                         )
                         : const Text(
-                          'Verify & Proceed',
+                          'Enter Application',
                           style: TextStyle(
                             fontSize: 16,
                             fontWeight: FontWeight.bold,
@@ -190,38 +97,36 @@ class _OtpVerificationPageState extends State<OtpVerificationPage> {
               ),
               const SizedBox(height: 24),
 
-              // Resend OTP
-              Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Text(
-                    'Didn\'t receive the code? ',
-                    style: TextStyle(color: Colors.grey[600]),
-                  ),
-                  TextButton(
-                    onPressed: _resendOtp,
-                    child: Text(
-                      'Resend',
-                      style: TextStyle(
-                        color: Colors.blue[700],
-                        fontWeight: FontWeight.bold,
-                      ),
+              // Note about the development mode
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: Colors.amber[50],
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: Colors.amber[200]!),
+                ),
+                child: Column(
+                  children: [
+                    Row(
+                      children: [
+                        Icon(Icons.info_outline, color: Colors.amber[800]),
+                        const SizedBox(width: 8),
+                        Text(
+                          'Developer Note',
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            color: Colors.amber[800],
+                          ),
+                        ),
+                      ],
                     ),
-                  ),
-                ],
-              ),
-
-              // Allow bypass for testing
-              const SizedBox(height: 48),
-              TextButton(
-                onPressed: () {
-                  Navigator.of(
-                    context,
-                  ).pushNamedAndRemoveUntil('/home', (route) => false);
-                },
-                child: const Text(
-                  'Skip verification (testing only)',
-                  style: TextStyle(color: Colors.grey),
+                    const SizedBox(height: 8),
+                    Text(
+                      'OTP verification has been disabled for faster testing. '
+                      'This should be re-enabled before production.',
+                      style: TextStyle(color: Colors.amber[800]),
+                    ),
+                  ],
                 ),
               ),
             ],

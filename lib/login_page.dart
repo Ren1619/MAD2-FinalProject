@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'otp_verification_page.dart'; // Import the OTP page
+import 'otp_verification_page.dart'; // Import the modified OTP page
 
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
@@ -14,6 +14,7 @@ class _LoginPageState extends State<LoginPage> {
   final _passwordController = TextEditingController();
   bool _obscureText = true;
   bool _isLoading = false;
+  bool _skipOTP = true; // Add a toggle for development mode
 
   @override
   void dispose() {
@@ -23,23 +24,35 @@ class _LoginPageState extends State<LoginPage> {
   }
 
   void _handleLogin() {
-    // Skip validation for now to see app flow
     setState(() {
       _isLoading = true;
     });
-    
+
     // Simulate login delay
     Future.delayed(const Duration(seconds: 1), () {
       setState(() {
         _isLoading = false;
       });
-      
-      // Navigate to OTP verification page
-      Navigator.of(context).push(
-        MaterialPageRoute(
-          builder: (context) => OtpVerificationPage(email: _emailController.text.isEmpty ? "user@example.com" : _emailController.text),
-        ),
-      );
+
+      // If skip OTP is enabled, go directly to home
+      if (_skipOTP) {
+        Navigator.of(
+          context,
+        ).pushNamedAndRemoveUntil('/home', (route) => false);
+      } else {
+        // Otherwise, go to the OTP verification page
+        Navigator.of(context).push(
+          MaterialPageRoute(
+            builder:
+                (context) => OtpVerificationPage(
+                  email:
+                      _emailController.text.isEmpty
+                          ? "user@example.com"
+                          : _emailController.text,
+                ),
+          ),
+        );
+      }
     });
   }
 
@@ -50,10 +63,12 @@ class _LoginPageState extends State<LoginPage> {
       );
       return;
     }
-    
+
     // Here you would typically trigger a password reset email
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Password reset link sent to ${_emailController.text}')),
+      SnackBar(
+        content: Text('Password reset link sent to ${_emailController.text}'),
+      ),
     );
   }
 
@@ -72,13 +87,9 @@ class _LoginPageState extends State<LoginPage> {
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   // App Logo or Image
-                  Icon(
-                    Icons.lock_outline,
-                    size: 100,
-                    color: Colors.blue[700],
-                  ),
+                  Icon(Icons.lock_outline, size: 100, color: Colors.blue[700]),
                   const SizedBox(height: 48.0),
-                  
+
                   // Welcome Text
                   Text(
                     'Welcome Back',
@@ -92,14 +103,11 @@ class _LoginPageState extends State<LoginPage> {
                   const SizedBox(height: 8.0),
                   Text(
                     'Sign in to continue',
-                    style: TextStyle(
-                      fontSize: 16,
-                      color: Colors.grey[600],
-                    ),
+                    style: TextStyle(fontSize: 16, color: Colors.grey[600]),
                     textAlign: TextAlign.center,
                   ),
                   const SizedBox(height: 48.0),
-                  
+
                   // Email Field
                   TextFormField(
                     controller: _emailController,
@@ -113,21 +121,26 @@ class _LoginPageState extends State<LoginPage> {
                       ),
                       focusedBorder: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(10),
-                        borderSide: BorderSide(color: Colors.blue[700]!, width: 2),
+                        borderSide: BorderSide(
+                          color: Colors.blue[700]!,
+                          width: 2,
+                        ),
                       ),
                     ),
                     validator: (value) {
                       if (value == null || value.isEmpty) {
                         return 'Please enter your email';
                       }
-                      if (!RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$').hasMatch(value)) {
+                      if (!RegExp(
+                        r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$',
+                      ).hasMatch(value)) {
                         return 'Please enter a valid email';
                       }
                       return null;
                     },
                   ),
                   const SizedBox(height: 24.0),
-                  
+
                   // Password Field
                   TextFormField(
                     controller: _passwordController,
@@ -138,7 +151,9 @@ class _LoginPageState extends State<LoginPage> {
                       prefixIcon: const Icon(Icons.lock_outline),
                       suffixIcon: IconButton(
                         icon: Icon(
-                          _obscureText ? Icons.visibility_off : Icons.visibility,
+                          _obscureText
+                              ? Icons.visibility_off
+                              : Icons.visibility,
                         ),
                         onPressed: () {
                           setState(() {
@@ -151,7 +166,10 @@ class _LoginPageState extends State<LoginPage> {
                       ),
                       focusedBorder: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(10),
-                        borderSide: BorderSide(color: Colors.blue[700]!, width: 2),
+                        borderSide: BorderSide(
+                          color: Colors.blue[700]!,
+                          width: 2,
+                        ),
                       ),
                     ),
                     validator: (value) {
@@ -165,7 +183,7 @@ class _LoginPageState extends State<LoginPage> {
                     },
                   ),
                   const SizedBox(height: 16.0),
-                  
+
                   // Forgot Password
                   Align(
                     alignment: Alignment.centerRight,
@@ -180,8 +198,28 @@ class _LoginPageState extends State<LoginPage> {
                       ),
                     ),
                   ),
+
+                  // Development Mode Toggle
+                  Row(
+                    children: [
+                      Switch(
+                        value: _skipOTP,
+                        activeColor: Colors.blue[700],
+                        onChanged: (value) {
+                          setState(() {
+                            _skipOTP = value;
+                          });
+                        },
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        'Skip verification (dev mode)',
+                        style: TextStyle(color: Colors.grey[600], fontSize: 14),
+                      ),
+                    ],
+                  ),
                   const SizedBox(height: 24.0),
-                  
+
                   // Login Button
                   ElevatedButton(
                     onPressed: _isLoading ? null : _handleLogin,
@@ -194,27 +232,25 @@ class _LoginPageState extends State<LoginPage> {
                       ),
                       elevation: 2,
                     ),
-                    child: _isLoading
-                        ? const SizedBox(
-                            width: 20,
-                            height: 20,
-                            child: CircularProgressIndicator(
-                              color: Colors.white,
-                              strokeWidth: 2.0,
+                    child:
+                        _isLoading
+                            ? const SizedBox(
+                              width: 20,
+                              height: 20,
+                              child: CircularProgressIndicator(
+                                color: Colors.white,
+                                strokeWidth: 2.0,
+                              ),
+                            )
+                            : const Text(
+                              'Log In',
+                              style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.bold,
+                              ),
                             ),
-                          )
-                        : const Text(
-                            'Log In',
-                            style: TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
                   ),
                   const SizedBox(height: 24.0),
-                  
-                  // You can add additional widgets here if needed
-                  const SizedBox(height: 8.0),
                 ],
               ),
             ),
@@ -224,11 +260,3 @@ class _LoginPageState extends State<LoginPage> {
     );
   }
 }
-
-// You can use this login page in your app by adding this route to your MaterialApp:
-// routes: {
-//   '/login': (context) => const LoginPage(),
-// },
-
-// Or directly as the home page:
-// home: const LoginPage(),

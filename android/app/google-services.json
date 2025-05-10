@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "635607471955",
+    "project_id": "mad2-finalproject",
+    "storage_bucket": "mad2-finalproject.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:635607471955:android:73ee8e0fe9e1fa7dafb3a6",
+        "android_client_info": {
+          "package_name": "com.example.moneyger_finalproject"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBZLsII6tYRsy1l3Ys0dM1p-wEZxmWT754"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
