@@ -2,10 +2,19 @@ import 'package:flutter/material.dart';
 import 'login_page.dart';
 import 'otp_verification_page.dart';
 import 'home_admin.dart';
-import 'package:firebase_core/firebase_core.dart';
-import 'firebase_options.dart';
+import 'services/database_helper.dart';
+import 'utils/debug_data.dart';
 
-void main() {
+void main() async {
+  // Ensure Flutter is initialized
+  WidgetsFlutterBinding.ensureInitialized();
+
+  // Initialize database
+  await DatabaseHelper().database;
+
+  // Populate debug data
+  await DebugData.populateDebugData();
+
   runApp(const MyApp());
 }
 
@@ -20,7 +29,7 @@ class MyApp extends StatelessWidget {
       theme: ThemeData(
         primarySwatch: Colors.blue,
         fontFamily: 'Poppins',
-        inputDecorationTheme: InputDecorationTheme(
+        inputDecorationTheme: InputDecoration(
           border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
           focusedBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(10),

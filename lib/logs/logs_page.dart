@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import '../services/firebase_service.dart';
 import '../widgets/common_widgets.dart';
 import 'package:intl/intl.dart';
 
@@ -12,114 +14,60 @@ class LogsPage extends StatefulWidget {
 class _LogsPageState extends State<LogsPage> {
   final TextEditingController _searchController = TextEditingController();
   String _filterType = "All";
-  bool _isLoading = false;
+  bool _isLoading = true;
+  final FirebaseService _firebaseService = FirebaseService();
+  List<Map<String, dynamic>> _logs = [];
 
-  // Sample data for logs
-  final List<Map<String, dynamic>> _logs = [
-    {
-      'description': 'User login: admin@example.com',
-      'timestamp': DateTime.now().subtract(const Duration(minutes: 5)),
-      'type': 'Authentication',
-      'user': 'Admin',
-      'ip': '192.168.1.1',
-    },
-    {
-      'description': 'New account created: john.doe@example.com',
-      'timestamp': DateTime.now().subtract(const Duration(hours: 2)),
-      'type': 'Account Management',
-      'user': 'Admin',
-      'ip': '192.168.1.1',
-    },
-    {
-      'description': 'Budget approved: Marketing Q2 Campaign',
-      'timestamp': DateTime.now().subtract(
-        const Duration(hours: 3, minutes: 15),
-      ),
-      'type': 'Budget',
-      'user': 'Jane Smith',
-      'ip': '192.168.1.45',
-    },
-    {
-      'description': 'Password reset requested for: sarah@example.com',
-      'timestamp': DateTime.now().subtract(
-        const Duration(hours: 5, minutes: 32),
-      ),
-      'type': 'Authentication',
-      'user': 'System',
-      'ip': '192.168.1.22',
-    },
-    {
-      'description': 'Budget revision requested: Office Supplies Monthly',
-      'timestamp': DateTime.now().subtract(
-        const Duration(hours: 7, minutes: 12),
-      ),
-      'type': 'Budget',
-      'user': 'Robert Brown',
-      'ip': '192.168.1.78',
-    },
-    {
-      'description':
-          'User account status changed: mike@example.com (Deactivated)',
-      'timestamp': DateTime.now().subtract(const Duration(days: 1, hours: 2)),
-      'type': 'Account Management',
-      'user': 'Admin',
-      'ip': '192.168.1.1',
-    },
-    {
-      'description': 'Budget denied: Executive Retreat Planning',
-      'timestamp': DateTime.now().subtract(const Duration(days: 1, hours: 6)),
-      'type': 'Budget',
-      'user': 'Jane Smith',
-      'ip': '192.168.1.45',
-    },
-    {
-      'description': 'System backup completed',
-      'timestamp': DateTime.now().subtract(const Duration(days: 1, hours: 23)),
-      'type': 'System',
-      'user': 'System',
-      'ip': '192.168.1.1',
-    },
-    {
-      'description': 'New budget submitted: Q3 Marketing Campaign',
-      'timestamp': DateTime.now().subtract(const Duration(days: 2, hours: 4)),
-      'type': 'Budget',
-      'user': 'Mike Johnson',
-      'ip': '192.168.1.33',
-    },
-    {
-      'description': 'Password changed: jane.smith@example.com',
-      'timestamp': DateTime.now().subtract(const Duration(days: 2, hours: 9)),
-      'type': 'Authentication',
-      'user': 'Jane Smith',
-      'ip': '192.168.1.45',
-    },
-    {
-      'description': 'System update installed: v2.1.5',
-      'timestamp': DateTime.now().subtract(const Duration(days: 3)),
-      'type': 'System',
-      'user': 'System',
-      'ip': '192.168.1.1',
-    },
-    {
-      'description': 'Budget archived: Holiday Party 2024',
-      'timestamp': DateTime.now().subtract(const Duration(days: 4, hours: 12)),
-      'type': 'Budget',
-      'user': 'Admin',
-      'ip': '192.168.1.1',
-    },
-    {
-      'description': 'Failed login attempt: unknown@example.com',
-      'timestamp': DateTime.now().subtract(const Duration(days: 5, hours: 3)),
-      'type': 'Authentication',
-      'user': 'Unknown',
-      'ip': '192.168.1.100',
-    },
-  ];
+  @override
+  void initState() {
+    super.initState();
+    _fetchLogs();
+
+    // Add listener to search field
+    _searchController.addListener(() {
+      setState(() {});
+    });
+  }
 
   @override
   void dispose() {
     _searchController.dispose();
     super.dispose();
+  }
+
+  Future<void> _fetchLogs() async {
+    setState(() {
+      _isLoading = true;
+    });
+
+    try {
+      // Get logs collection
+      QuerySnapshot snapshot =
+          await FirebaseFirestore.instance
+              .collection('logs')
+              .orderBy('timestamp', descending: true)
+              .get();
+
+      // Convert to list of maps
+      _logs =
+          snapshot.docs.map((doc) {
+            Map<String, dynamic> data = doc.data() as Map<String, dynamic>;
+            // Convert Firestore timestamp to DateTime
+            if (data['timestamp'] != null) {
+              data['timestamp'] = (data['timestamp'] as Timestamp).toDate();
+            } else {
+              data['timestamp'] = DateTime.now();
+            }
+            data['id'] = doc.id; // Add document ID
+            return data;
+          }).toList();
+    } catch (e) {
+      print('Error fetching logs: $e');
+    } finally {
+      setState(() {
+        _isLoading = false;
+      });
+    }
   }
 
   // Format timestamp
@@ -171,23 +119,22 @@ class _LogsPageState extends State<LogsPage> {
     String searchQuery = _searchController.text.toLowerCase();
 
     for (var log in _logs) {
+      final String type = log['type'] ?? '';
+      final String description = log['description'] ?? '';
+      final String user = log['user'] ?? '';
+      final String ip = log['ip'] ?? '';
+
       // Filter by type
-      if (_filterType == "All" || log['type'] == _filterType) {
+      if (_filterType == "All" || type == _filterType) {
         // Filter by search query
         if (searchQuery.isEmpty ||
-            log['description'].toLowerCase().contains(searchQuery) ||
-            log['user'].toLowerCase().contains(searchQuery) ||
-            log['ip'].toLowerCase().contains(searchQuery)) {
+            description.toLowerCase().contains(searchQuery) ||
+            user.toLowerCase().contains(searchQuery) ||
+            ip.toLowerCase().contains(searchQuery)) {
           filteredList.add(log);
         }
       }
     }
-
-    // Sort by timestamp (newest first)
-    filteredList.sort(
-      (a, b) =>
-          (b['timestamp'] as DateTime).compareTo(a['timestamp'] as DateTime),
-    );
 
     return filteredList;
   }
@@ -233,7 +180,6 @@ class _LogsPageState extends State<LogsPage> {
                           ),
                           contentPadding: EdgeInsets.zero,
                         ),
-                        onChanged: (_) => setState(() {}),
                       ),
                       const SizedBox(height: 12),
                       Row(
@@ -257,7 +203,6 @@ class _LogsPageState extends State<LogsPage> {
                             ),
                             contentPadding: EdgeInsets.zero,
                           ),
-                          onChanged: (_) => setState(() {}),
                         ),
                       ),
                       const SizedBox(width: 16),
@@ -296,16 +241,7 @@ class _LogsPageState extends State<LogsPage> {
                   icon: const Icon(Icons.refresh),
                   tooltip: 'Refresh',
                   onPressed: () {
-                    setState(() {
-                      _isLoading = true;
-                    });
-
-                    // Simulate refresh delay
-                    Future.delayed(const Duration(milliseconds: 800), () {
-                      setState(() {
-                        _isLoading = false;
-                      });
-                    });
+                    _fetchLogs();
                   },
                 ),
               ],
@@ -384,21 +320,27 @@ class _LogsPageState extends State<LogsPage> {
       separatorBuilder: (context, index) => const Divider(),
       itemBuilder: (context, index) {
         final log = logs[index];
+        final String description = log['description'] ?? 'No description';
+        final DateTime timestamp = log['timestamp'] ?? DateTime.now();
+        final String user = log['user'] ?? 'Unknown';
+        final String ip = log['ip'] ?? 'Unknown';
+        final String type = log['type'] ?? 'Unknown';
+
         return ListTile(
           contentPadding: const EdgeInsets.symmetric(
             vertical: 8,
             horizontal: 12,
           ),
           leading: CircleAvatar(
-            backgroundColor: _getTypeColor(log['type']).withOpacity(0.2),
+            backgroundColor: _getTypeColor(type).withOpacity(0.2),
             child: Icon(
-              _getLogIcon(log['type']),
-              color: _getTypeColor(log['type']),
+              _getLogIcon(type),
+              color: _getTypeColor(type),
               size: 20,
             ),
           ),
           title: Text(
-            log['description'],
+            description,
             style: const TextStyle(fontWeight: FontWeight.w500, fontSize: 14),
           ),
           subtitle: Column(
@@ -406,11 +348,11 @@ class _LogsPageState extends State<LogsPage> {
             children: [
               const SizedBox(height: 4),
               Text(
-                _formatTimestamp(log['timestamp']),
+                _formatTimestamp(timestamp),
                 style: TextStyle(color: Colors.grey[600], fontSize: 12),
               ),
               Text(
-                'User: ${log['user']} • IP: ${log['ip']}',
+                'User: $user • IP: $ip',
                 style: TextStyle(color: Colors.grey[600], fontSize: 12),
               ),
             ],
@@ -469,6 +411,13 @@ class _LogsPageState extends State<LogsPage> {
             ],
             rows:
                 logs.map((log) {
+                  final String description =
+                      log['description'] ?? 'No description';
+                  final DateTime timestamp = log['timestamp'] ?? DateTime.now();
+                  final String user = log['user'] ?? 'Unknown';
+                  final String ip = log['ip'] ?? 'Unknown';
+                  final String type = log['type'] ?? 'Unknown';
+
                   return DataRow(
                     cells: [
                       DataCell(
@@ -477,11 +426,11 @@ class _LogsPageState extends State<LogsPage> {
                             CircleAvatar(
                               radius: 16,
                               backgroundColor: _getTypeColor(
-                                log['type'],
+                                type,
                               ).withOpacity(0.2),
                               child: Icon(
-                                _getLogIcon(log['type']),
-                                color: _getTypeColor(log['type']),
+                                _getLogIcon(type),
+                                color: _getTypeColor(type),
                                 size: 14,
                               ),
                             ),
@@ -492,7 +441,7 @@ class _LogsPageState extends State<LogsPage> {
                                 mainAxisAlignment: MainAxisAlignment.center,
                                 children: [
                                   Text(
-                                    log['description'],
+                                    description,
                                     overflow: TextOverflow.ellipsis,
                                     style: const TextStyle(
                                       fontWeight: FontWeight.w500,
@@ -501,9 +450,9 @@ class _LogsPageState extends State<LogsPage> {
                                   ),
                                   const SizedBox(height: 2),
                                   Text(
-                                    log['type'],
+                                    type,
                                     style: TextStyle(
-                                      color: _getTypeColor(log['type']),
+                                      color: _getTypeColor(type),
                                       fontSize: 12,
                                       fontWeight: FontWeight.w500,
                                     ),
@@ -514,9 +463,9 @@ class _LogsPageState extends State<LogsPage> {
                           ],
                         ),
                       ),
-                      DataCell(Text(log['user'])),
-                      DataCell(Text(log['ip'])),
-                      DataCell(Text(_formatTimestamp(log['timestamp']))),
+                      DataCell(Text(user)),
+                      DataCell(Text(ip)),
+                      DataCell(Text(_formatTimestamp(timestamp))),
                       DataCell(
                         IconButton(
                           icon: const Icon(Icons.info_outline, size: 20),
@@ -548,6 +497,13 @@ class _LogsPageState extends State<LogsPage> {
   }
 
   void _showLogDetails(BuildContext context, Map<String, dynamic> log) {
+    final String description = log['description'] ?? 'No description';
+    final DateTime timestamp = log['timestamp'] ?? DateTime.now();
+    final String user = log['user'] ?? 'Unknown';
+    final String ip = log['ip'] ?? 'Unknown';
+    final String type = log['type'] ?? 'Unknown';
+    final String id = log['id'] ?? '';
+
     showDialog(
       context: context,
       builder:
@@ -564,22 +520,15 @@ class _LogsPageState extends State<LogsPage> {
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  _buildDetailRow(
-                    'Event Type',
-                    log['type'],
-                    _getTypeColor(log['type']),
-                  ),
+                  _buildDetailRow('Event Type', type, _getTypeColor(type)),
                   const SizedBox(height: 16),
-                  _buildDetailRow('Description', log['description']),
+                  _buildDetailRow('Description', description),
                   const SizedBox(height: 16),
-                  _buildDetailRow(
-                    'Timestamp',
-                    _formatTimestamp(log['timestamp']),
-                  ),
+                  _buildDetailRow('Timestamp', _formatTimestamp(timestamp)),
                   const SizedBox(height: 16),
-                  _buildDetailRow('User', log['user']),
+                  _buildDetailRow('User', user),
                   const SizedBox(height: 16),
-                  _buildDetailRow('IP Address', log['ip']),
+                  _buildDetailRow('IP Address', ip),
 
                   // Additional information could be added here
                   const SizedBox(height: 16),
@@ -591,11 +540,11 @@ class _LogsPageState extends State<LogsPage> {
                   ),
                   const SizedBox(height: 8),
                   Text(
-                    'Session ID: ${log.hashCode.toString()}',
+                    'Log ID: $id',
                     style: TextStyle(fontSize: 14, color: Colors.grey[700]),
                   ),
                   Text(
-                    'Event ID: LOG-${1000 + _logs.indexOf(log)}',
+                    'Event ID: LOG-${id.hashCode.abs()}',
                     style: TextStyle(fontSize: 14, color: Colors.grey[700]),
                   ),
                 ],

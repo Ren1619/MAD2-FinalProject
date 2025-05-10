@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
-import 'otp_verification_page.dart'; // Import the modified OTP page
+import 'otp_verification_page.dart';
+import 'services/auth_service.dart';
+import 'services/database_service.dart';
 
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
@@ -12,6 +14,8 @@ class _LoginPageState extends State<LoginPage> {
   final _formKey = GlobalKey<FormState>();
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
+  final AuthService _authService = AuthService();
+  final DatabaseService _databaseService = DatabaseService();
   bool _obscureText = true;
   bool _isLoading = false;
   bool _skipOTP = true; // Add a toggle for development mode
@@ -23,53 +27,61 @@ class _LoginPageState extends State<LoginPage> {
     super.dispose();
   }
 
-  void _handleLogin() {
+  void _handleLogin() async {
+    // Validate form
+    if (!(_formKey.currentState?.validate() ?? false)) {
+      return;
+    }
+
     setState(() {
       _isLoading = true;
     });
 
-    // Simulate login delay
-    Future.delayed(const Duration(seconds: 1), () {
+    try {
+      // Use the auth service to sign in
+      bool success = await _authService.signInWithEmail(
+        _emailController.text.isEmpty
+            ? "admin@example.com"
+            : _emailController.text,
+        _passwordController.text.isEmpty
+            ? "password123"
+            : _passwordController.text,
+      );
+
+      if (success) {
+        // If skip OTP is enabled, go directly to home
+        if (_skipOTP) {
+          Navigator.of(
+            context,
+          ).pushNamedAndRemoveUntil('/home', (route) => false);
+        } else {
+          // Otherwise, go to the OTP verification page
+          Navigator.of(context).push(
+            MaterialPageRoute(
+              builder:
+                  (context) => OtpVerificationPage(
+                    email:
+                        _emailController.text.isEmpty
+                            ? "user@example.com"
+                            : _emailController.text,
+                  ),
+            ),
+          );
+        }
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Invalid email or password')),
+        );
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Error: ${e.toString()}')));
+    } finally {
       setState(() {
         _isLoading = false;
       });
-
-      // If skip OTP is enabled, go directly to home
-      if (_skipOTP) {
-        Navigator.of(
-          context,
-        ).pushNamedAndRemoveUntil('/home', (route) => false);
-      } else {
-        // Otherwise, go to the OTP verification page
-        Navigator.of(context).push(
-          MaterialPageRoute(
-            builder:
-                (context) => OtpVerificationPage(
-                  email:
-                      _emailController.text.isEmpty
-                          ? "user@example.com"
-                          : _emailController.text,
-                ),
-          ),
-        );
-      }
-    });
-  }
-
-  void _handleForgotPassword() {
-    if (_emailController.text.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please enter your email address')),
-      );
-      return;
     }
-
-    // Here you would typically trigger a password reset email
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('Password reset link sent to ${_emailController.text}'),
-      ),
-    );
   }
 
   @override

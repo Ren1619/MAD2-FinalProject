@@ -1,46 +1,95 @@
 import 'package:flutter/material.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import '../services/firebase_service.dart';
 import '../widgets/common_widgets.dart';
 import './create_account_dialog.dart';
 
-class AccountsPage extends StatelessWidget {
+class AccountsPage extends StatefulWidget {
   const AccountsPage({super.key});
 
   @override
-  Widget build(BuildContext context) {
-    // Sample data for accounts
-    final accounts = [
-      {
-        'name': 'John Doe',
-        'email': 'john.doe@example.com',
-        'role': 'Budget Manager',
-        'status': 'Active',
-      },
-      {
-        'name': 'Jane Smith',
-        'email': 'jane.smith@example.com',
-        'role': 'Authorized Spender',
-        'status': 'Active',
-      },
-      {
-        'name': 'Mike Johnson',
-        'email': 'mike@example.com',
-        'role': 'Authorized Spender',
-        'status': 'Inactive',
-      },
-      {
-        'name': 'Sarah Williams',
-        'email': 'sarah@example.com',
-        'role': 'Authorized Spender',
-        'status': 'Active',
-      },
-      {
-        'name': 'Robert Brown',
-        'email': 'robert@example.com',
-        'role': 'Financial Planning and Analysis Manager',
-        'status': 'Active',
-      },
-    ];
+  _AccountsPageState createState() => _AccountsPageState();
+}
 
+class _AccountsPageState extends State<AccountsPage> {
+  final FirebaseService _firebaseService = FirebaseService();
+  bool _isLoading = true;
+  List<Map<String, dynamic>> _accounts = [];
+  String _searchQuery = '';
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchAccounts();
+  }
+
+  Future<void> _fetchAccounts() async {
+    setState(() {
+      _isLoading = true;
+    });
+
+    try {
+      _accounts = await _firebaseService.fetchUsers();
+    } catch (e) {
+      print('Error fetching accounts: $e');
+    } finally {
+      setState(() {
+        _isLoading = false;
+      });
+    }
+  }
+
+  // Filter accounts based on search query
+  List<Map<String, dynamic>> get _filteredAccounts {
+    if (_searchQuery.isEmpty) {
+      return _accounts;
+    }
+
+    return _accounts.where((account) {
+      final name = account['name']?.toString().toLowerCase() ?? '';
+      final email = account['email']?.toString().toLowerCase() ?? '';
+      final role = account['role']?.toString().toLowerCase() ?? '';
+      final query = _searchQuery.toLowerCase();
+
+      return name.contains(query) ||
+          email.contains(query) ||
+          role.contains(query);
+    }).toList();
+  }
+
+  // Handle user status change
+  Future<void> _handleUserStatusChange(
+    String userId,
+    String currentStatus,
+  ) async {
+    // Toggle between Active and Inactive
+    final newStatus = currentStatus == 'Active' ? 'Inactive' : 'Active';
+
+    try {
+      await _firebaseService.updateUserStatus(userId, newStatus);
+
+      // Update local list
+      setState(() {
+        final index = _accounts.indexWhere(
+          (account) => account['id'] == userId,
+        );
+        if (index != -1) {
+          _accounts[index]['status'] = newStatus;
+        }
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('User status updated to $newStatus')),
+      );
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error updating user status: ${e.toString()}')),
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.all(16.0),
       child: Column(
@@ -53,7 +102,14 @@ class AccountsPage extends StatelessWidget {
                 // Mobile layout - stack vertically
                 return Column(
                   children: [
-                    const CustomSearchField(hintText: 'Search accounts...'),
+                    CustomSearchField(
+                      hintText: 'Search accounts...',
+                      onChanged: (value) {
+                        setState(() {
+                          _searchQuery = value;
+                        });
+                      },
+                    ),
                     const SizedBox(height: 12),
                     Row(
                       mainAxisAlignment: MainAxisAlignment.end,
@@ -66,8 +122,13 @@ class AccountsPage extends StatelessWidget {
                 return Row(
                   children: [
                     Expanded(
-                      child: const CustomSearchField(
+                      child: CustomSearchField(
                         hintText: 'Search accounts...',
+                        onChanged: (value) {
+                          setState(() {
+                            _searchQuery = value;
+                          });
+                        },
                       ),
                     ),
                     const SizedBox(width: 16),
@@ -82,38 +143,48 @@ class AccountsPage extends StatelessWidget {
 
           // Account cards with responsive list
           Expanded(
-            child: LayoutBuilder(
-              builder: (context, constraints) {
-                if (constraints.maxWidth < 600) {
-                  // Mobile layout - simplified cards
-                  return ListView.builder(
-                    itemCount: accounts.length,
-                    itemBuilder: (context, index) {
-                      final account = accounts[index];
-                      return _buildMobileAccountCard(context, account);
-                    },
-                  );
-                } else if (constraints.maxWidth < 960) {
-                  // Tablet layout - more detailed but still compact
-                  return ListView.builder(
-                    itemCount: accounts.length,
-                    itemBuilder: (context, index) {
-                      final account = accounts[index];
-                      return _buildTabletAccountCard(context, account);
-                    },
-                  );
-                } else {
-                  // Desktop layout - full details
-                  return ListView.builder(
-                    itemCount: accounts.length,
-                    itemBuilder: (context, index) {
-                      final account = accounts[index];
-                      return _buildDesktopAccountCard(context, account);
-                    },
-                  );
-                }
-              },
-            ),
+            child:
+                _isLoading
+                    ? const Center(child: CircularProgressIndicator())
+                    : _filteredAccounts.isEmpty
+                    ? EmptyStateWidget(
+                      message: 'No accounts found',
+                      icon: Icons.person_off,
+                      actionLabel: 'Create Account',
+                      onActionPressed: () => showCreateAccountDialog(context),
+                    )
+                    : LayoutBuilder(
+                      builder: (context, constraints) {
+                        if (constraints.maxWidth < 600) {
+                          // Mobile layout - simplified cards
+                          return ListView.builder(
+                            itemCount: _filteredAccounts.length,
+                            itemBuilder: (context, index) {
+                              final account = _filteredAccounts[index];
+                              return _buildMobileAccountCard(context, account);
+                            },
+                          );
+                        } else if (constraints.maxWidth < 960) {
+                          // Tablet layout - more detailed but still compact
+                          return ListView.builder(
+                            itemCount: _filteredAccounts.length,
+                            itemBuilder: (context, index) {
+                              final account = _filteredAccounts[index];
+                              return _buildTabletAccountCard(context, account);
+                            },
+                          );
+                        } else {
+                          // Desktop layout - full details
+                          return ListView.builder(
+                            itemCount: _filteredAccounts.length,
+                            itemBuilder: (context, index) {
+                              final account = _filteredAccounts[index];
+                              return _buildDesktopAccountCard(context, account);
+                            },
+                          );
+                        }
+                      },
+                    ),
           ),
         ],
       ),
@@ -165,8 +236,14 @@ class AccountsPage extends StatelessWidget {
   // Mobile account card - simplified for small screens
   Widget _buildMobileAccountCard(
     BuildContext context,
-    Map<String, String> account,
+    Map<String, dynamic> account,
   ) {
+    final String name = account['name'] ?? 'Unknown';
+    final String email = account['email'] ?? 'No email';
+    final String role = account['role'] ?? 'No role';
+    final String status = account['status'] ?? 'Inactive';
+    final String id = account['id'] ?? '';
+
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
       elevation: 1,
@@ -181,7 +258,7 @@ class AccountsPage extends StatelessWidget {
                 CircleAvatar(
                   backgroundColor: Colors.blue[100],
                   child: Text(
-                    account['name']!.substring(0, 1),
+                    name.isNotEmpty ? name.substring(0, 1) : 'U',
                     style: TextStyle(
                       color: Colors.blue[800],
                       fontWeight: FontWeight.bold,
@@ -194,14 +271,14 @@ class AccountsPage extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        account['name']!,
+                        name,
                         style: const TextStyle(
                           fontWeight: FontWeight.bold,
                           fontSize: 16,
                         ),
                       ),
                       Text(
-                        account['email']!,
+                        email,
                         style: TextStyle(color: Colors.grey[600], fontSize: 14),
                         overflow: TextOverflow.ellipsis,
                       ),
@@ -211,8 +288,13 @@ class AccountsPage extends StatelessWidget {
                 PopupMenuButton(
                   icon: Icon(Icons.more_vert, color: Colors.grey[600]),
                   itemBuilder: (context) => _buildMenuItems(account),
-                  onSelected: (value) {
-                    // Handle menu actions
+                  onSelected: (value) async {
+                    if (value == 'activate' || value == 'deactivate') {
+                      await _handleUserStatusChange(id, status);
+                    } else if (value == 'delete') {
+                      // Show confirmation dialog before deleting
+                      _showDeleteConfirmationDialog(context, id, name);
+                    }
                   },
                 ),
               ],
@@ -221,9 +303,9 @@ class AccountsPage extends StatelessWidget {
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Flexible(child: RoleBadge(role: account['role']!)),
+                Flexible(child: RoleBadge(role: role)),
                 const SizedBox(width: 8),
-                StatusBadge(status: account['status']!),
+                StatusBadge(status: status),
               ],
             ),
           ],
@@ -235,8 +317,14 @@ class AccountsPage extends StatelessWidget {
   // Tablet account card - more details, still compact
   Widget _buildTabletAccountCard(
     BuildContext context,
-    Map<String, String> account,
+    Map<String, dynamic> account,
   ) {
+    final String name = account['name'] ?? 'Unknown';
+    final String email = account['email'] ?? 'No email';
+    final String role = account['role'] ?? 'No role';
+    final String status = account['status'] ?? 'Inactive';
+    final String id = account['id'] ?? '';
+
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
       elevation: 1,
@@ -248,7 +336,7 @@ class AccountsPage extends StatelessWidget {
             CircleAvatar(
               backgroundColor: Colors.blue[100],
               child: Text(
-                account['name']!.substring(0, 1),
+                name.isNotEmpty ? name.substring(0, 1) : 'U',
                 style: TextStyle(
                   color: Colors.blue[800],
                   fontWeight: FontWeight.bold,
@@ -262,14 +350,14 @@ class AccountsPage extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    account['name']!,
+                    name,
                     style: const TextStyle(
                       fontWeight: FontWeight.bold,
                       fontSize: 16,
                     ),
                   ),
                   Text(
-                    account['email']!,
+                    email,
                     style: TextStyle(color: Colors.grey[600], fontSize: 14),
                   ),
                 ],
@@ -280,14 +368,18 @@ class AccountsPage extends StatelessWidget {
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.end,
                 children: [
-                  Flexible(child: RoleBadge(role: account['role']!)),
+                  Flexible(child: RoleBadge(role: role)),
                   const SizedBox(width: 12),
-                  StatusBadge(status: account['status']!),
+                  StatusBadge(status: status),
                   PopupMenuButton(
                     icon: Icon(Icons.more_vert, color: Colors.grey[600]),
                     itemBuilder: (context) => _buildMenuItems(account),
-                    onSelected: (value) {
-                      // Handle menu actions
+                    onSelected: (value) async {
+                      if (value == 'activate' || value == 'deactivate') {
+                        await _handleUserStatusChange(id, status);
+                      } else if (value == 'delete') {
+                        _showDeleteConfirmationDialog(context, id, name);
+                      }
                     },
                   ),
                 ],
@@ -302,8 +394,14 @@ class AccountsPage extends StatelessWidget {
   // Desktop account card - full details
   Widget _buildDesktopAccountCard(
     BuildContext context,
-    Map<String, String> account,
+    Map<String, dynamic> account,
   ) {
+    final String name = account['name'] ?? 'Unknown';
+    final String email = account['email'] ?? 'No email';
+    final String role = account['role'] ?? 'No role';
+    final String status = account['status'] ?? 'Inactive';
+    final String id = account['id'] ?? '';
+
     return Card(
       margin: const EdgeInsets.only(bottom: 16),
       elevation: 1,
@@ -315,7 +413,7 @@ class AccountsPage extends StatelessWidget {
             CircleAvatar(
               backgroundColor: Colors.blue[100],
               child: Text(
-                account['name']!.substring(0, 1),
+                name.isNotEmpty ? name.substring(0, 1) : 'U',
                 style: TextStyle(
                   color: Colors.blue[800],
                   fontWeight: FontWeight.bold,
@@ -329,7 +427,7 @@ class AccountsPage extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    account['name']!,
+                    name,
                     style: const TextStyle(
                       fontWeight: FontWeight.bold,
                       fontSize: 16,
@@ -337,7 +435,7 @@ class AccountsPage extends StatelessWidget {
                   ),
                   const SizedBox(height: 4),
                   Text(
-                    account['email']!,
+                    email,
                     style: TextStyle(color: Colors.grey[600], fontSize: 14),
                   ),
                 ],
@@ -347,16 +445,20 @@ class AccountsPage extends StatelessWidget {
               flex: 2,
               child: Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 8),
-                child: RoleBadge(role: account['role']!),
+                child: RoleBadge(role: role),
               ),
             ),
-            StatusBadge(status: account['status']!),
+            StatusBadge(status: status),
             const SizedBox(width: 12),
             PopupMenuButton(
               icon: Icon(Icons.more_vert, color: Colors.grey[600]),
               itemBuilder: (context) => _buildMenuItems(account),
-              onSelected: (value) {
-                // Handle menu actions
+              onSelected: (value) async {
+                if (value == 'activate' || value == 'deactivate') {
+                  await _handleUserStatusChange(id, status);
+                } else if (value == 'delete') {
+                  _showDeleteConfirmationDialog(context, id, name);
+                }
               },
             ),
           ],
@@ -366,7 +468,9 @@ class AccountsPage extends StatelessWidget {
   }
 
   // Common menu items for all layouts
-  List<PopupMenuItem> _buildMenuItems(Map<String, String> account) {
+  List<PopupMenuItem> _buildMenuItems(Map<String, dynamic> account) {
+    final String status = account['status'] ?? 'Inactive';
+
     return [
       const PopupMenuItem(
         value: 'edit',
@@ -389,15 +493,15 @@ class AccountsPage extends StatelessWidget {
         ),
       ),
       PopupMenuItem(
-        value: account['status'] == 'Active' ? 'deactivate' : 'activate',
+        value: status == 'Active' ? 'deactivate' : 'activate',
         child: Row(
           children: [
             Icon(
-              account['status'] == 'Active' ? Icons.block : Icons.check_circle,
+              status == 'Active' ? Icons.block : Icons.check_circle,
               size: 18,
             ),
             const SizedBox(width: 8),
-            Text(account['status'] == 'Active' ? 'Deactivate' : 'Activate'),
+            Text(status == 'Active' ? 'Deactivate' : 'Activate'),
           ],
         ),
       ),
@@ -412,5 +516,48 @@ class AccountsPage extends StatelessWidget {
         ),
       ),
     ];
+  }
+
+  // Show confirmation dialog before deleting a user
+  void _showDeleteConfirmationDialog(
+    BuildContext context,
+    String userId,
+    String userName,
+  ) {
+    showDialog(
+      context: context,
+      builder:
+          (context) => AlertDialog(
+            title: const Text('Confirm Deletion'),
+            content: Text(
+              'Are you sure you want to delete $userName? This action cannot be undone.',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: Text(
+                  'Cancel',
+                  style: TextStyle(color: Colors.grey[700]),
+                ),
+              ),
+              ElevatedButton(
+                style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+                onPressed: () async {
+                  Navigator.pop(context);
+                  // Here you would add the deletion logic
+                  // This would be a good place to call another method from your FirebaseService
+
+                  // For now, let's just show a message
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('This feature is not implemented yet'),
+                    ),
+                  );
+                },
+                child: const Text('Delete'),
+              ),
+            ],
+          ),
+    );
   }
 }

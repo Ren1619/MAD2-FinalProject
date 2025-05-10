@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'services/firebase_service.dart';
 
 class OtpVerificationPage extends StatefulWidget {
   final String email;
@@ -11,6 +13,150 @@ class OtpVerificationPage extends StatefulWidget {
 
 class _OtpVerificationPageState extends State<OtpVerificationPage> {
   bool _isLoading = false;
+  List<TextEditingController> _otpControllers = [];
+  List<FocusNode> _focusNodes = [];
+  final int _otpLength = 6;
+  String _verificationId = '';
+  int? _resendToken;
+  FirebaseService _firebaseService = FirebaseService();
+
+  @override
+  void initState() {
+    super.initState();
+
+    // Initialize controllers and focus nodes
+    for (int i = 0; i < _otpLength; i++) {
+      _otpControllers.add(TextEditingController());
+      _focusNodes.add(FocusNode());
+    }
+
+    // Start phone verification process
+    _sendOtp();
+  }
+
+  @override
+  void dispose() {
+    // Dispose controllers and focus nodes
+    for (int i = 0; i < _otpLength; i++) {
+      _otpControllers[i].dispose();
+      _focusNodes[i].dispose();
+    }
+    super.dispose();
+  }
+
+  // In a real app, this would send an OTP to the user's phone
+  // Here we're simulating it for development purposes
+  Future<void> _sendOtp() async {
+    setState(() {
+      _isLoading = true;
+    });
+
+    try {
+      // In a production environment, you would use Firebase Phone Auth
+      // Here we're just simulating it for development purposes
+      // The code below would be similar to what you'd use with real phone auth
+
+      /*
+      await FirebaseAuth.instance.verifyPhoneNumber(
+        phoneNumber: phoneNumber,
+        verificationCompleted: (PhoneAuthCredential credential) {
+          // Auto-verification or instant verification
+          _verifyOtp(credential);
+        },
+        verificationFailed: (FirebaseAuthException e) {
+          // Handle verification failure
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Verification failed: ${e.message}')),
+          );
+          setState(() {
+            _isLoading = false;
+          });
+        },
+        codeSent: (String verificationId, int? resendToken) {
+          // Store verification ID and resend token
+          setState(() {
+            _verificationId = verificationId;
+            _resendToken = resendToken;
+            _isLoading = false;
+          });
+        },
+        codeAutoRetrievalTimeout: (String verificationId) {
+          // Auto-retrieval timeout
+          setState(() {
+            _verificationId = verificationId;
+          });
+        },
+        forceResendingToken: _resendToken,
+      );
+      */
+
+      // For development mode, just simulate a delay
+      await Future.delayed(const Duration(seconds: 1));
+      setState(() {
+        _verificationId = 'dev-mode-verification-id';
+        _isLoading = false;
+      });
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error sending OTP: ${e.toString()}')),
+      );
+      setState(() {
+        _isLoading = false;
+      });
+    }
+  }
+
+  void _verifyOtp() async {
+    // Get OTP from text fields
+    String otp = '';
+    for (int i = 0; i < _otpLength; i++) {
+      otp += _otpControllers[i].text;
+    }
+
+    // Validate OTP length
+    if (otp.length != _otpLength) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Please enter all digits')));
+      return;
+    }
+
+    setState(() {
+      _isLoading = true;
+    });
+
+    try {
+      // In a production environment, you would create and verify credential
+      /*
+      PhoneAuthCredential credential = PhoneAuthProvider.credential(
+        verificationId: _verificationId,
+        smsCode: otp,
+      );
+      
+      // Sign in with credential
+      await FirebaseAuth.instance.signInWithCredential(credential);
+      */
+
+      // For development mode, simulate verification
+      await Future.delayed(const Duration(milliseconds: 500));
+
+      // Log this activity
+      await _firebaseService.logActivity(
+        'User verified OTP: ${widget.email}',
+        'Authentication',
+      );
+
+      // Navigate to home page
+      Navigator.of(context).pushNamedAndRemoveUntil('/home', (route) => false);
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Verification failed: ${e.toString()}')),
+      );
+      setState(() {
+        _isLoading = false;
+      });
+    }
+  }
 
   void _proceedToHome() {
     setState(() {
@@ -64,6 +210,67 @@ class _OtpVerificationPageState extends State<OtpVerificationPage> {
                 textAlign: TextAlign.center,
               ),
               const SizedBox(height: 48),
+
+              // In development mode, we skip OTP verification
+              // In production, you'd add an OTP input form here
+              /*
+              // OTP Input Row
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                children: List.generate(
+                  _otpLength,
+                  (index) => SizedBox(
+                    width: 40,
+                    child: TextField(
+                      controller: _otpControllers[index],
+                      focusNode: _focusNodes[index],
+                      maxLength: 1,
+                      keyboardType: TextInputType.number,
+                      textAlign: TextAlign.center,
+                      decoration: InputDecoration(
+                        counterText: '',
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        focusedBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(10),
+                          borderSide: BorderSide(color: Colors.blue[700]!, width: 2),
+                        ),
+                      ),
+                      onChanged: (value) {
+                        if (value.isNotEmpty && index < _otpLength - 1) {
+                          // Move to next field
+                          _focusNodes[index + 1].requestFocus();
+                        }
+                        
+                        // If all fields are filled, verify OTP
+                        bool allFilled = true;
+                        for (var controller in _otpControllers) {
+                          if (controller.text.isEmpty) {
+                            allFilled = false;
+                            break;
+                          }
+                        }
+                        
+                        if (allFilled) {
+                          _verifyOtp();
+                        }
+                      },
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 24),
+              
+              // Resend OTP button
+              TextButton(
+                onPressed: !_isLoading ? _sendOtp : null,
+                child: Text(
+                  'Resend OTP',
+                  style: TextStyle(color: Colors.blue[700]),
+                ),
+              ),
+              */
 
               // Primary button to proceed directly
               ElevatedButton(
