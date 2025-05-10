@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../theme.dart';
 
 // A collection of common widgets used throughout the app
 
@@ -9,18 +10,20 @@ class StatusBadge extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final isActive = status == 'Active';
+    final Color statusColor =
+        AppTheme.statusColors[status] ?? Colors.grey[700]!;
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
       decoration: BoxDecoration(
-        color: isActive ? Colors.green[50] : Colors.red[50],
+        color: statusColor.withOpacity(0.1),
+        border: Border.all(color: statusColor.withOpacity(0.3)),
         borderRadius: BorderRadius.circular(20),
       ),
       child: Text(
         status,
         style: TextStyle(
-          color: isActive ? Colors.green[700] : Colors.red[700],
+          color: statusColor,
           fontWeight: FontWeight.bold,
           fontSize: 12,
         ),
@@ -54,6 +57,7 @@ class RoleBadge extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
       decoration: BoxDecoration(
         color: backgroundColor,
+        border: Border.all(color: textColor.withOpacity(0.3)),
         borderRadius: BorderRadius.circular(20),
       ),
       child: Text(
@@ -78,16 +82,38 @@ class CustomSearchField extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return TextField(
-      onChanged: onChanged,
-      decoration: InputDecoration(
-        hintText: hintText,
-        prefixIcon: const Icon(Icons.search),
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(10),
-          borderSide: BorderSide(color: Colors.grey[300]!),
+    return Container(
+      decoration: BoxDecoration(
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 10,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: TextField(
+        onChanged: onChanged,
+        decoration: InputDecoration(
+          hintText: hintText,
+          prefixIcon: const Icon(Icons.search),
+          suffixIcon: Icon(Icons.mic, color: AppTheme.primaryColor),
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(10),
+            borderSide: BorderSide(color: Colors.grey[300]!),
+          ),
+          enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(10),
+            borderSide: BorderSide(color: Colors.grey[300]!),
+          ),
+          focusedBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(10),
+            borderSide: BorderSide(color: AppTheme.primaryColor, width: 2),
+          ),
+          filled: true,
+          fillColor: Colors.white,
+          contentPadding: const EdgeInsets.symmetric(vertical: 0),
         ),
-        contentPadding: const EdgeInsets.symmetric(vertical: 0),
       ),
     );
   }
@@ -113,23 +139,48 @@ class EmptyStateWidget extends StatelessWidget {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(icon, size: 64, color: Colors.grey[400]),
-          const SizedBox(height: 16),
+          Container(
+            padding: const EdgeInsets.all(20),
+            decoration: BoxDecoration(
+              color: Colors.blue[50],
+              shape: BoxShape.circle,
+            ),
+            child: Icon(icon, size: 64, color: AppTheme.primaryColor),
+          ),
+          const SizedBox(height: 24),
           Text(
             message,
-            style: TextStyle(fontSize: 16, color: Colors.grey[600]),
+            style: TextStyle(
+              fontSize: 18,
+              color: AppTheme.textSecondary,
+              fontWeight: FontWeight.w500,
+            ),
             textAlign: TextAlign.center,
           ),
           if (onActionPressed != null && actionLabel != null)
             Padding(
-              padding: const EdgeInsets.only(top: 16),
+              padding: const EdgeInsets.only(top: 24),
               child: ElevatedButton(
                 onPressed: onActionPressed,
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.blue[700],
+                  backgroundColor: AppTheme.primaryColor,
                   foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 24,
+                    vertical: 12,
+                  ),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(30),
+                  ),
                 ),
-                child: Text(actionLabel!),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.add),
+                    const SizedBox(width: 8),
+                    Text(actionLabel!),
+                  ],
+                ),
               ),
             ),
         ],
@@ -150,15 +201,45 @@ class LoadingIndicator extends StatelessWidget {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          CircularProgressIndicator(color: Colors.blue[700]),
-          if (message != null)
-            Padding(
-              padding: const EdgeInsets.only(top: 16),
-              child: Text(
-                message!,
-                style: TextStyle(color: Colors.grey[600], fontSize: 14),
-              ),
+          Container(
+            padding: const EdgeInsets.all(24),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(16),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.1),
+                  blurRadius: 20,
+                  offset: const Offset(0, 4),
+                ),
+              ],
             ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                SizedBox(
+                  width: 50,
+                  height: 50,
+                  child: CircularProgressIndicator(
+                    color: AppTheme.primaryColor,
+                    strokeWidth: 4,
+                  ),
+                ),
+                if (message != null)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 16),
+                    child: Text(
+                      message!,
+                      style: TextStyle(
+                        color: AppTheme.textSecondary,
+                        fontSize: 16,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
         ],
       ),
     );
@@ -199,9 +280,9 @@ class _HoverCardState extends State<HoverCard> {
             borderRadius: BorderRadius.circular(10),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withOpacity(_isHovering ? 0.1 : 0.05),
-                blurRadius: _isHovering ? 8 : 4,
-                offset: Offset(0, _isHovering ? 4 : 2),
+                color: Colors.black.withOpacity(_isHovering ? 0.15 : 0.05),
+                blurRadius: _isHovering ? 12 : 4,
+                offset: Offset(0, _isHovering ? 6 : 2),
               ),
             ],
           ),
@@ -210,4 +291,159 @@ class _HoverCardState extends State<HoverCard> {
       ),
     );
   }
+}
+
+// Custom app bar with consistent styling
+class CustomAppBar extends StatelessWidget implements PreferredSizeWidget {
+  final String title;
+  final List<Widget>? actions;
+  final VoidCallback? onMenuPressed;
+
+  const CustomAppBar({
+    required this.title,
+    this.actions,
+    this.onMenuPressed,
+    Key? key,
+  }) : super(key: key);
+
+  @override
+  Widget build(BuildContext context) {
+    return AppBar(
+      backgroundColor: Colors.white,
+      elevation: 2,
+      shadowColor: Colors.black.withOpacity(0.05),
+      title: Text(
+        title,
+        style: TextStyle(
+          color: AppTheme.primaryColor,
+          fontWeight: FontWeight.bold,
+          fontSize: 20,
+        ),
+      ),
+      leading: IconButton(
+        icon: Icon(Icons.menu, color: AppTheme.primaryColor),
+        onPressed: onMenuPressed ?? () => Scaffold.of(context).openDrawer(),
+      ),
+      actions: actions ?? [],
+    );
+  }
+
+  @override
+  Size get preferredSize => const Size.fromHeight(kToolbarHeight);
+}
+
+// Responsive builder for different screen sizes
+class ResponsiveBuilder extends StatelessWidget {
+  final Widget mobile;
+  final Widget? tablet;
+  final Widget? desktop;
+
+  const ResponsiveBuilder({
+    required this.mobile,
+    this.tablet,
+    this.desktop,
+    Key? key,
+  }) : super(key: key);
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        if (constraints.maxWidth >= 1100) {
+          return desktop ?? tablet ?? mobile;
+        } else if (constraints.maxWidth >= 650) {
+          return tablet ?? mobile;
+        } else {
+          return mobile;
+        }
+      },
+    );
+  }
+}
+
+// Custom button with gradient background
+class GradientButton extends StatelessWidget {
+  final String text;
+  final VoidCallback onPressed;
+  final List<Color> colors;
+  final double height;
+  final double width;
+  final IconData? icon;
+
+  const GradientButton({
+    required this.text,
+    required this.onPressed,
+    this.colors = const [Color(0xFF1976D2), Color(0xFF1565C0)],
+    this.height = 50,
+    this.width = double.infinity,
+    this.icon,
+    Key? key,
+  }) : super(key: key);
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: width,
+      height: height,
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: colors,
+          begin: Alignment.centerLeft,
+          end: Alignment.centerRight,
+        ),
+        borderRadius: BorderRadius.circular(10),
+        boxShadow: [
+          BoxShadow(
+            color: colors[0].withOpacity(0.3),
+            blurRadius: 8,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: ElevatedButton(
+        onPressed: onPressed,
+        style: ElevatedButton.styleFrom(
+          backgroundColor: Colors.transparent,
+          shadowColor: Colors.transparent,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(10),
+          ),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            if (icon != null) ...[
+              Icon(icon, color: Colors.white),
+              const SizedBox(width: 8),
+            ],
+            Text(
+              text,
+              style: const TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.bold,
+                color: Colors.white,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// UI animation helper
+Route createPageRoute(Widget page) {
+  return PageRouteBuilder(
+    pageBuilder: (context, animation, secondaryAnimation) => page,
+    transitionsBuilder: (context, animation, secondaryAnimation, child) {
+      const begin = Offset(1.0, 0.0);
+      const end = Offset.zero;
+      const curve = Curves.easeInOut;
+
+      var tween = Tween(begin: begin, end: end).chain(CurveTween(curve: curve));
+      var offsetAnimation = animation.drive(tween);
+
+      return SlideTransition(position: offsetAnimation, child: child);
+    },
+  );
 }
