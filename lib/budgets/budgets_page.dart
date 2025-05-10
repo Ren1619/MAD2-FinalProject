@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
-import '../services/firebase_service.dart';
+import '../services/database_service.dart';
 import '../widgets/common_widgets.dart';
 
 class BudgetsPage extends StatefulWidget {
@@ -44,7 +43,7 @@ class _BudgetsPageState extends State<BudgetsPage>
     });
 
     try {
-      _budgets = await _firebaseService.fetchBudgets();
+      _budgets = await _databaseService.fetchBudgets();
     } catch (e) {
       print('Error fetching budgets: $e');
     } finally {
@@ -108,14 +107,8 @@ class _BudgetsPageState extends State<BudgetsPage>
     } else if (_filterStatus == "Recent") {
       // Sort by dateSubmitted (most recent first)
       filteredList.sort((a, b) {
-        final aDate =
-            a['dateSubmitted'] is Timestamp
-                ? (a['dateSubmitted'] as Timestamp).toDate()
-                : DateTime.parse(a['dateSubmitted'] ?? '2025-01-01');
-        final bDate =
-            b['dateSubmitted'] is Timestamp
-                ? (b['dateSubmitted'] as Timestamp).toDate()
-                : DateTime.parse(b['dateSubmitted'] ?? '2025-01-01');
+        final aDate = DateTime.parse(a['dateSubmitted'] ?? '2025-01-01');
+        final bDate = DateTime.parse(b['dateSubmitted'] ?? '2025-01-01');
         return bDate.compareTo(aDate);
       });
     }
@@ -388,14 +381,17 @@ class _BudgetsPageState extends State<BudgetsPage>
     );
   }
 
-  // Helper method to format Firestore timestamp or string date
+  // Helper method to format date string
   String _formatDate(dynamic date) {
     if (date == null) return 'Unknown';
 
-    if (date is Timestamp) {
-      return date.toDate().toString().substring(0, 10);
-    } else if (date is String) {
-      return date;
+    if (date is String) {
+      try {
+        final DateTime dateTime = DateTime.parse(date);
+        return dateTime.toString().substring(0, 10);
+      } catch (e) {
+        return date;
+      }
     } else {
       return 'Invalid date';
     }
@@ -732,8 +728,8 @@ class _BudgetsPageState extends State<BudgetsPage>
                                 });
 
                                 try {
-                                  // Create budget in Firestore
-                                  await _firebaseService.createBudget({
+                                  // Create budget in SQLite
+                                  await _databaseService.createBudget({
                                     'name': nameController.text,
                                     'budget': budgetAmount,
                                     'description': descriptionController.text,
@@ -974,7 +970,7 @@ class _BudgetsPageState extends State<BudgetsPage>
 
                                   try {
                                     // Update budget status to Approved
-                                    await _firebaseService.updateBudgetStatus(
+                                    await _databaseService.updateBudgetStatus(
                                       id,
                                       'Approved',
                                     );
@@ -1046,7 +1042,7 @@ class _BudgetsPageState extends State<BudgetsPage>
 
                                   try {
                                     // Update budget status to Pending (resubmitted)
-                                    await _firebaseService.updateBudgetStatus(
+                                    await _databaseService.updateBudgetStatus(
                                       id,
                                       'Pending',
                                     );

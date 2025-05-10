@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
-import '/services/auth_service.dart';
-import '/services/database_service.dart';
+import '../services/auth_service.dart';
+import '../services/database_service.dart';
 
 void showCreateAccountDialog(BuildContext context) {
   final nameController = TextEditingController();
@@ -160,6 +160,12 @@ void showCreateAccountDialog(BuildContext context) {
                         );
 
                         if (success) {
+                          // Log activity
+                          await _databaseService.logActivity(
+                            'New account created: ${emailController.text}',
+                            'Account Management',
+                          );
+
                           Navigator.pop(context);
                           ScaffoldMessenger.of(context).showSnackBar(
                             const SnackBar(

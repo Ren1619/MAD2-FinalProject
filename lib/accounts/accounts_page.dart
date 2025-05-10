@@ -1,6 +1,7 @@
+// lib/accounts/accounts_page.dart
+
 import 'package:flutter/material.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
-import '../services/firebase_service.dart';
+import '../services/database_service.dart';
 import '../widgets/common_widgets.dart';
 import './create_account_dialog.dart';
 
@@ -12,7 +13,7 @@ class AccountsPage extends StatefulWidget {
 }
 
 class _AccountsPageState extends State<AccountsPage> {
-  final FirebaseService _firebaseService = FirebaseService();
+  final DatabaseService _databaseService = DatabaseService();
   bool _isLoading = true;
   List<Map<String, dynamic>> _accounts = [];
   String _searchQuery = '';
@@ -29,7 +30,7 @@ class _AccountsPageState extends State<AccountsPage> {
     });
 
     try {
-      _accounts = await _firebaseService.fetchUsers();
+      _accounts = await _databaseService.fetchUsers();
     } catch (e) {
       print('Error fetching accounts: $e');
     } finally {
@@ -66,7 +67,7 @@ class _AccountsPageState extends State<AccountsPage> {
     final newStatus = currentStatus == 'Active' ? 'Inactive' : 'Active';
 
     try {
-      await _firebaseService.updateUserStatus(userId, newStatus);
+      await _databaseService.updateUserStatus(userId, newStatus);
 
       // Update local list
       setState(() {
@@ -545,7 +546,7 @@ class _AccountsPageState extends State<AccountsPage> {
                 onPressed: () async {
                   Navigator.pop(context);
                   // Here you would add the deletion logic
-                  // This would be a good place to call another method from your FirebaseService
+                  // This would be a good place to call another method from your DatabaseService
 
                   // For now, let's just show a message
                   ScaffoldMessenger.of(context).showSnackBar(

@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
-import '../services/firebase_service.dart';
+import '../services/database_service.dart';
 import '../widgets/common_widgets.dart';
 import 'package:intl/intl.dart';
 
@@ -15,7 +14,7 @@ class _LogsPageState extends State<LogsPage> {
   final TextEditingController _searchController = TextEditingController();
   String _filterType = "All";
   bool _isLoading = true;
-  final FirebaseService _firebaseService = FirebaseService();
+  final DatabaseService _databaseService = DatabaseService();
   List<Map<String, dynamic>> _logs = [];
 
   @override
@@ -41,26 +40,21 @@ class _LogsPageState extends State<LogsPage> {
     });
 
     try {
-      // Get logs collection
-      QuerySnapshot snapshot =
-          await FirebaseFirestore.instance
-              .collection('logs')
-              .orderBy('timestamp', descending: true)
-              .get();
-
-      // Convert to list of maps
-      _logs =
-          snapshot.docs.map((doc) {
-            Map<String, dynamic> data = doc.data() as Map<String, dynamic>;
-            // Convert Firestore timestamp to DateTime
-            if (data['timestamp'] != null) {
-              data['timestamp'] = (data['timestamp'] as Timestamp).toDate();
-            } else {
-              data['timestamp'] = DateTime.now();
-            }
-            data['id'] = doc.id; // Add document ID
-            return data;
-          }).toList();
+      // Get logs from database service
+      _logs = await _databaseService.fetchLogs();
+      
+      // Convert String timestamp to DateTime for each log
+      for (var log in _logs) {
+        if (log['timestamp'] != null) {
+          try {
+            log['timestamp'] = DateTime.parse(log['timestamp']);
+          } catch (e) {
+            log['timestamp'] = DateTime.now();
+          }
+        } else {
+          log['timestamp'] = DateTime.now();
+        }
+      }
     } catch (e) {
       print('Error fetching logs: $e');
     } finally {

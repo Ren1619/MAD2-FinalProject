@@ -6,7 +6,7 @@ import 'auth_service.dart';
 class DatabaseService {
   final DatabaseHelper _dbHelper = DatabaseHelper();
   final AuthService _authService = AuthService();
-  
+
   // Budget methods
   Future<List<Map<String, dynamic>>> fetchBudgets() async {
     try {
@@ -16,12 +16,12 @@ class DatabaseService {
       return [];
     }
   }
-  
+
   Future<bool> createBudget(Map<String, dynamic> budgetData) async {
     try {
       // Get current user
       Map<String, dynamic>? currentUser = await _authService.currentUser;
-      
+
       // Add additional budget data
       String id = UuidGenerator.generateUuid();
       Map<String, dynamic> newBudget = {
@@ -32,33 +32,38 @@ class DatabaseService {
         'submittedBy': currentUser?['id'],
         'submittedByEmail': currentUser?['email'],
       };
-      
+
       await _dbHelper.insertBudget(newBudget);
-      
+
       // Log activity
-      await logActivity('New budget submitted: ${budgetData['name']}', 'Budget');
-      
+      await logActivity(
+        'New budget submitted: ${budgetData['name']}',
+        'Budget',
+      );
+
       return true;
     } catch (e) {
       print('Error creating budget: $e');
       return false;
     }
   }
-  
-  Future<bool> updateBudgetStatus(String budgetId, String newStatus, {String? notes}) async {
+
+  Future<bool> updateBudgetStatus(
+    String budgetId,
+    String newStatus, {
+    String? notes,
+  }) async {
     try {
       // Get budget
       Map<String, dynamic>? budget = await _dbHelper.getBudgetById(budgetId);
-      
+
       if (budget == null) {
         return false;
       }
-      
+
       // Create update data
-      Map<String, dynamic> updateData = {
-        'status': newStatus,
-      };
-      
+      Map<String, dynamic> updateData = {'status': newStatus};
+
       // Add appropriate timestamp field based on status
       if (newStatus == 'Approved') {
         updateData['dateApproved'] = DateTime.now().toIso8601String();
@@ -71,20 +76,21 @@ class DatabaseService {
       } else if (newStatus == 'Archived') {
         updateData['dateArchived'] = DateTime.now().toIso8601String();
       }
-      
+
       await _dbHelper.updateBudgetStatus(budgetId, updateData);
-      
+
       // Log activity
-      String description = 'Budget status updated to $newStatus: ${budget['name']}';
+      String description =
+          'Budget status updated to $newStatus: ${budget['name']}';
       await logActivity(description, 'Budget');
-      
+
       return true;
     } catch (e) {
       print('Error updating budget status: $e');
       return false;
     }
   }
-  
+
   // User account methods
   Future<List<Map<String, dynamic>>> fetchUsers() async {
     try {
@@ -94,22 +100,22 @@ class DatabaseService {
       return [];
     }
   }
-  
+
   Future<bool> updateUserStatus(String userId, String newStatus) async {
     try {
       await _dbHelper.updateUserStatus(userId, newStatus);
-      
+
       // Log activity
       String description = 'User status updated to $newStatus';
       await logActivity(description, 'Account Management');
-      
+
       return true;
     } catch (e) {
       print('Error updating user status: $e');
       return false;
     }
   }
-  
+
   // Logging methods
   Future<List<Map<String, dynamic>>> fetchLogs() async {
     try {
@@ -119,12 +125,12 @@ class DatabaseService {
       return [];
     }
   }
-  
+
   Future<void> logActivity(String description, String type) async {
     try {
       // Get current user
       Map<String, dynamic>? currentUser = await _authService.currentUser;
-      
+
       await _dbHelper.insertLog({
         'id': UuidGenerator.generateUuid(),
         'description': description,
