@@ -1,3 +1,5 @@
+// lib/services/database_helper.dart
+
 import 'dart:async';
 import 'dart:io';
 import 'package:path/path.dart';
@@ -72,7 +74,8 @@ class DatabaseHelper {
   // Users Operations
   Future<List<Map<String, dynamic>>> getUsers() async {
     Database db = await database;
-    return await db.query('users');
+    // Order by status (Active first) and then by name
+    return await db.query('users', orderBy: 'status = "Inactive", name ASC');
   }
 
   Future<Map<String, dynamic>?> getUserById(String id) async {
@@ -82,7 +85,7 @@ class DatabaseHelper {
       where: 'id = ?',
       whereArgs: [id],
     );
-    
+
     return results.isNotEmpty ? results.first : null;
   }
 
@@ -93,7 +96,7 @@ class DatabaseHelper {
       where: 'email = ?',
       whereArgs: [email],
     );
-    
+
     return results.isNotEmpty ? results.first : null;
   }
 
@@ -124,11 +127,20 @@ class DatabaseHelper {
 
   Future<int> deleteUser(String id) async {
     Database db = await database;
-    return await db.delete(
+
+    // First check if user exists
+    List<Map<String, dynamic>> results = await db.query(
       'users',
       where: 'id = ?',
       whereArgs: [id],
     );
+
+    if (results.isEmpty) {
+      return 0; // User not found
+    }
+
+    // Delete the user
+    return await db.delete('users', where: 'id = ?', whereArgs: [id]);
   }
 
   // Budgets Operations
@@ -154,7 +166,7 @@ class DatabaseHelper {
       where: 'id = ?',
       whereArgs: [id],
     );
-    
+
     return results.isNotEmpty ? results.first : null;
   }
 
@@ -173,7 +185,10 @@ class DatabaseHelper {
     );
   }
 
-  Future<int> updateBudgetStatus(String id, Map<String, dynamic> updateData) async {
+  Future<int> updateBudgetStatus(
+    String id,
+    Map<String, dynamic> updateData,
+  ) async {
     Database db = await database;
     return await db.update(
       'budgets',
@@ -185,11 +200,7 @@ class DatabaseHelper {
 
   Future<int> deleteBudget(String id) async {
     Database db = await database;
-    return await db.delete(
-      'budgets',
-      where: 'id = ?',
-      whereArgs: [id],
-    );
+    return await db.delete('budgets', where: 'id = ?', whereArgs: [id]);
   }
 
   // Logs Operations
@@ -211,5 +222,27 @@ class DatabaseHelper {
   Future<int> insertLog(Map<String, dynamic> log) async {
     Database db = await database;
     return await db.insert('logs', log);
+  }
+
+  // Get users by role
+  Future<List<Map<String, dynamic>>> getUsersByRole(String role) async {
+    Database db = await database;
+    return await db.query(
+      'users',
+      where: 'role = ?',
+      whereArgs: [role],
+      orderBy: 'name ASC',
+    );
+  }
+
+  // Get users by status
+  Future<List<Map<String, dynamic>>> getUsersByStatus(String status) async {
+    Database db = await database;
+    return await db.query(
+      'users',
+      where: 'status = ?',
+      whereArgs: [status],
+      orderBy: 'name ASC',
+    );
   }
 }

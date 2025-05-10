@@ -1,5 +1,3 @@
-// lib/accounts/accounts_page.dart
-
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../services/database_service.dart';
@@ -7,17 +5,18 @@ import '../widgets/common_widgets.dart';
 import './create_account_dialog.dart';
 
 class AccountsPage extends StatefulWidget {
-  const AccountsPage({super.key});
+  const AccountsPage({Key? key}) : super(key: key);
 
   @override
-  _AccountsPageState createState() => _AccountsPageState();
+  AccountsPageState createState() => AccountsPageState();
 }
 
-class _AccountsPageState extends State<AccountsPage> {
+class AccountsPageState extends State<AccountsPage> {
   late DatabaseService _databaseService;
   bool _isLoading = true;
   List<Map<String, dynamic>> _accounts = [];
   String _searchQuery = '';
+  String _filterType = "All";
 
   // Add refresh indicator key
   final GlobalKey<RefreshIndicatorState> _refreshIndicatorKey =
@@ -35,39 +34,6 @@ class _AccountsPageState extends State<AccountsPage> {
     // Get the database service from provider
     _databaseService = Provider.of<DatabaseService>(context);
     _fetchAccounts();
-
-    // If not using provider, uncomment this line:
-    // _databaseService.addListener(_onDatabaseChanged);
-  }
-
-  @override
-  void dispose() {
-    // If not using provider, uncomment this line:
-    // _databaseService.removeListener(_onDatabaseChanged);
-    super.dispose();
-  }
-
-  // Callback for database changes
-  void _onDatabaseChanged() {
-    _fetchAccounts();
-  }
-
-  Future<void> _fetchAccounts() async {
-    setState(() {
-      _isLoading = true;
-    });
-
-    try {
-      _accounts = await _databaseService.fetchUsers();
-    } catch (e) {
-      print('Error fetching accounts: $e');
-    } finally {
-      if (mounted) {
-        setState(() {
-          _isLoading = false;
-        });
-      }
-    }
   }
 
   // Filter accounts based on search query
@@ -112,16 +78,34 @@ class _AccountsPageState extends State<AccountsPage> {
     }
   }
 
+  // Delete user account
+  Future<void> _handleUserDelete(String userId) async {
+    try {
+      bool success = await _databaseService.deleteUser(userId);
+
+      if (success) {
+        // Refresh accounts list
+        _fetchAccounts();
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Account deleted successfully')),
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Failed to delete account')),
+        );
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error deleting user: ${e.toString()}')),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    // Use Consumer to listen for changes to DatabaseService
     return Consumer<DatabaseService>(
       builder: (context, databaseService, child) {
-        // Fetch accounts when the database service changes
-        if (!_isLoading) {
-          _fetchAccounts();
-        }
-
         return RefreshIndicator(
           key: _refreshIndicatorKey,
           onRefresh: _fetchAccounts,
@@ -265,13 +249,16 @@ class _AccountsPageState extends State<AccountsPage> {
           children: [
             Icon(Icons.filter_list, color: Colors.blue[700]),
             const SizedBox(width: 4),
-            Text('Filter', style: TextStyle(color: Colors.blue[700])),
+            Text(
+              _filterType == "All" ? 'Filter' : 'Filter: $_filterType',
+              style: TextStyle(color: Colors.blue[700]),
+            ),
           ],
         ),
       ),
       itemBuilder:
           (context) => [
-            const PopupMenuItem(value: 'all', child: Text('All Accounts')),
+            const PopupMenuItem(value: 'All', child: Text('All Accounts')),
             const PopupMenuItem(
               value: 'budget_manager',
               child: Text('Budget Managers'),
@@ -284,13 +271,39 @@ class _AccountsPageState extends State<AccountsPage> {
               value: 'spender',
               child: Text('Authorized Spenders'),
             ),
-            const PopupMenuItem(value: 'active', child: Text('Active')),
-            const PopupMenuItem(value: 'inactive', child: Text('Inactive')),
+            const PopupMenuItem(value: 'Active', child: Text('Active')),
+            const PopupMenuItem(value: 'Inactive', child: Text('Inactive')),
           ],
       onSelected: (value) {
-        // Filter logic would go here
+        setState(() {
+          _filterType = value.toString();
+        });
+        _fetchAccounts(); // Refresh the accounts with the new filter
       },
     );
+  }
+
+  // Update to _fetchAccounts method in AccountsPage class
+  Future<void> _fetchAccounts() async {
+    setState(() {
+      _isLoading = true;
+    });
+
+    try {
+      if (_filterType == "All") {
+        _accounts = await _databaseService.fetchUsers();
+      } else {
+        _accounts = await _databaseService.getFilteredUsers(_filterType);
+      }
+    } catch (e) {
+      print('Error fetching accounts: $e');
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
+    }
   }
 
   // Mobile account card - simplified for small screens
@@ -604,15 +617,8 @@ class _AccountsPageState extends State<AccountsPage> {
                 style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
                 onPressed: () async {
                   Navigator.pop(context);
-                  // Here you would add the deletion logic
-                  // This would be a good place to call another method from your DatabaseService
-
-                  // For now, let's just show a message
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('This feature is not implemented yet'),
-                    ),
-                  );
+                  // Call the delete method
+                  await _handleUserDelete(userId);
                 },
                 child: const Text('Delete'),
               ),

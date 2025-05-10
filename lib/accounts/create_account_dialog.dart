@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import '../services/database_service.dart';
 
 void showCreateAccountDialog(
@@ -12,7 +13,6 @@ void showCreateAccountDialog(
   String selectedRole = 'Authorized Spender';
   bool obscurePassword = true;
   bool isLoading = false;
-  final DatabaseService _databaseService = DatabaseService();
 
   showDialog(
     context: context,
@@ -42,6 +42,7 @@ void showCreateAccountDialog(
                       const SizedBox(height: 16),
                       TextField(
                         controller: emailController,
+                        keyboardType: TextInputType.emailAddress,
                         decoration: const InputDecoration(
                           labelText: 'Email',
                           hintText: 'Enter email address',
@@ -123,74 +124,108 @@ void showCreateAccountDialog(
                     style: ElevatedButton.styleFrom(
                       backgroundColor: Colors.blue[700],
                     ),
-                    onPressed: () async {
-                      // Check if passwords match
-                      if (passwordController.text !=
-                          confirmPasswordController.text) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text('Passwords do not match'),
-                          ),
-                        );
-                        return;
-                      }
+                    onPressed:
+                        isLoading
+                            ? null
+                            : () async {
+                              // Validate form fields
 
-                      // Check if fields are filled
-                      if (nameController.text.isEmpty ||
-                          emailController.text.isEmpty ||
-                          passwordController.text.isEmpty) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text('Please fill all required fields'),
-                          ),
-                        );
-                        return;
-                      }
+                              // Check if passwords match
+                              if (passwordController.text !=
+                                  confirmPasswordController.text) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text('Passwords do not match'),
+                                  ),
+                                );
+                                return;
+                              }
 
-                      setState(() {
-                        isLoading = true;
-                      });
+                              // Check if fields are filled
+                              if (nameController.text.isEmpty ||
+                                  emailController.text.isEmpty ||
+                                  passwordController.text.isEmpty) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text(
+                                      'Please fill all required fields',
+                                    ),
+                                  ),
+                                );
+                                return;
+                              }
 
-                      try {
-                        // Create user directly with database service
-                        bool success = await _databaseService.createUser({
-                          'name': nameController.text,
-                          'email': emailController.text,
-                          'role': selectedRole,
-                        });
+                              // Validate email format
+                              final emailRegex = RegExp(
+                                r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$',
+                              );
+                              if (!emailRegex.hasMatch(emailController.text)) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text(
+                                      'Please enter a valid email address',
+                                    ),
+                                  ),
+                                );
+                                return;
+                              }
 
-                        if (success) {
-                          Navigator.pop(context);
+                              setState(() {
+                                isLoading = true;
+                              });
 
-                          // Call the callback if provided
-                          if (onAccountCreated != null) {
-                            onAccountCreated();
-                          }
+                              try {
+                                // Get database service from provider
+                                final databaseService =
+                                    Provider.of<DatabaseService>(
+                                      context,
+                                      listen: false,
+                                    );
 
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                              content: Text('Account created successfully'),
-                            ),
-                          );
-                        } else {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                              content: Text(
-                                'An account with this email already exists',
-                              ),
-                            ),
-                          );
-                        }
-                      } catch (e) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(content: Text('Error: ${e.toString()}')),
-                        );
-                      } finally {
-                        setState(() {
-                          isLoading = false;
-                        });
-                      }
-                    },
+                                // Create user
+                                bool success = await databaseService
+                                    .createUser({
+                                      'name': nameController.text,
+                                      'email': emailController.text,
+                                      'role': selectedRole,
+                                    });
+
+                                if (success) {
+                                  Navigator.pop(context);
+
+                                  // Call the callback if provided
+                                  if (onAccountCreated != null) {
+                                    onAccountCreated();
+                                  }
+
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(
+                                      content: Text(
+                                        'Account created successfully',
+                                      ),
+                                    ),
+                                  );
+                                } else {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(
+                                      content: Text(
+                                        'An account with this email already exists',
+                                      ),
+                                    ),
+                                  );
+                                }
+                              } catch (e) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                    content: Text('Error: ${e.toString()}'),
+                                  ),
+                                );
+                              } finally {
+                                setState(() {
+                                  isLoading = false;
+                                });
+                              }
+                            },
                     child:
                         isLoading
                             ? const SizedBox(

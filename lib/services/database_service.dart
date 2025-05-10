@@ -22,11 +22,14 @@ class DatabaseService extends ChangeNotifier {
   Future<bool> createBudget(Map<String, dynamic> budgetData) async {
     try {
       // Get current user (simplified for demo)
-      Map<String, dynamic> currentUser = {
-        'id': 'demo-user-id',
-        'email': 'admin@example.com',
-        'name': 'Admin User',
-      };
+      Map<String, dynamic>? currentUser = await _authService.currentUser;
+      if (currentUser == null) {
+        currentUser = {
+          'id': 'demo-user-id',
+          'email': 'admin@example.com',
+          'name': 'Admin User',
+        };
+      }
 
       // Add additional budget data
       String id = UuidGenerator.generateUuid();
@@ -54,6 +57,29 @@ class DatabaseService extends ChangeNotifier {
     } catch (e) {
       print('Error creating budget: $e');
       return false;
+    }
+  }
+
+  Future<List<Map<String, dynamic>>> getFilteredUsers(String filterType) async {
+    try {
+      if (filterType == "All") {
+        return await _dbHelper.getUsers();
+      } else if (filterType == "Active" || filterType == "Inactive") {
+        return await _dbHelper.getUsersByStatus(filterType);
+      } else if (filterType == "budget_manager") {
+        return await _dbHelper.getUsersByRole("Budget Manager");
+      } else if (filterType == "fp_manager") {
+        return await _dbHelper.getUsersByRole(
+          "Financial Planning and Analysis Manager",
+        );
+      } else if (filterType == "spender") {
+        return await _dbHelper.getUsersByRole("Authorized Spender");
+      } else {
+        return await _dbHelper.getUsers();
+      }
+    } catch (e) {
+      print('Error fetching filtered users: $e');
+      return [];
     }
   }
 
@@ -115,10 +141,18 @@ class DatabaseService extends ChangeNotifier {
 
   Future<bool> updateUserStatus(String userId, String newStatus) async {
     try {
+      // Get user details for logging
+      Map<String, dynamic>? user = await _dbHelper.getUserById(userId);
+      if (user == null) {
+        return false;
+      }
+
+      // Update status
       await _dbHelper.updateUserStatus(userId, newStatus);
 
       // Log activity
-      String description = 'User status updated to $newStatus';
+      String description =
+          'User status updated to $newStatus: ${user['email']}';
       await logActivity(description, 'Account Management');
 
       // Notify listeners about the change
@@ -172,6 +206,38 @@ class DatabaseService extends ChangeNotifier {
     }
   }
 
+  // Delete user account
+  Future<bool> deleteUser(String userId) async {
+    try {
+      // Get user details for logging before deletion
+      Map<String, dynamic>? user = await _dbHelper.getUserById(userId);
+      if (user == null) {
+        return false;
+      }
+
+      // Delete user from database
+      int result = await _dbHelper.deleteUser(userId);
+
+      if (result <= 0) {
+        return false; // Deletion failed
+      }
+
+      // Log activity
+      await logActivity(
+        'Account deleted: ${user['email']}',
+        'Account Management',
+      );
+
+      // Notify listeners about the change
+      notifyListeners();
+
+      return true;
+    } catch (e) {
+      print('Error deleting user: $e');
+      return false;
+    }
+  }
+
   // Logging methods
   Future<List<Map<String, dynamic>>> fetchLogs() async {
     try {
@@ -184,11 +250,12 @@ class DatabaseService extends ChangeNotifier {
 
   Future<void> logActivity(String description, String type) async {
     try {
-      // Simplified logging without user info
-      Map<String, dynamic> currentUser = {
-        'name': 'Admin User',
-        'email': 'admin@example.com',
-      };
+      // Get current user information for the log
+      Map<String, dynamic>? currentUser = await _authService.currentUser;
+
+      if (currentUser == null) {
+        currentUser = {'name': 'Admin User', 'email': 'admin@example.com'};
+      }
 
       await _dbHelper.insertLog({
         'id': UuidGenerator.generateUuid(),

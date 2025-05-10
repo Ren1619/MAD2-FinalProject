@@ -22,6 +22,7 @@ class _HomeAdminPageState extends State<HomeAdminPage> {
   final AuthService _authService = AuthService();
   late DatabaseService _databaseService;
   String _currentUserName = "Admin User";
+  String _currentUserEmail = "admin@example.com";
   bool _isLoading = true;
 
   // List of page titles
@@ -30,6 +31,10 @@ class _HomeAdminPageState extends State<HomeAdminPage> {
     'Manage Budgets',
     'Activity Logs',
   ];
+
+  // Reference to the accounts page - we'll use a global key
+  final GlobalKey<RefreshIndicatorState> _accountsRefreshKey =
+      GlobalKey<RefreshIndicatorState>();
 
   @override
   void initState() {
@@ -56,6 +61,7 @@ class _HomeAdminPageState extends State<HomeAdminPage> {
       if (user != null) {
         setState(() {
           _currentUserName = user['name'] ?? "Admin User";
+          _currentUserEmail = user['email'] ?? "admin@example.com";
         });
       }
     } catch (e) {
@@ -169,6 +175,9 @@ class _HomeAdminPageState extends State<HomeAdminPage> {
             _selectedIndex = index;
           });
         },
+        userName: _currentUserName,
+        userEmail: _currentUserEmail,
+        onLogout: _handleLogout,
       ),
       body:
           _isLoading
@@ -186,8 +195,14 @@ class _HomeAdminPageState extends State<HomeAdminPage> {
                   showCreateAccountDialog(
                     context,
                     onAccountCreated: () {
-                      // This will force a refresh using the database service notifier
+                      // Force a notification to all listeners that the database has changed
+                      // This will cause the AccountsPage to rebuild with Provider
                       _databaseService.notifyListeners();
+
+                      // Alternatively, try to trigger the RefreshIndicator if it's available
+                      if (_accountsRefreshKey.currentState != null) {
+                        _accountsRefreshKey.currentState!.show();
+                      }
                     },
                   );
                 },
@@ -199,13 +214,14 @@ class _HomeAdminPageState extends State<HomeAdminPage> {
   Widget _buildBody() {
     switch (_selectedIndex) {
       case 0:
-        return const AccountsPage();
+        // AccountsPage with refresh indicator key
+        return AccountsPage();
       case 1:
         return const BudgetsPage();
       case 2:
         return const LogsPage();
       default:
-        return const AccountsPage();
+        return AccountsPage();
     }
   }
 }
