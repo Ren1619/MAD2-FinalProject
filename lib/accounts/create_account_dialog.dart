@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
-import '../services/auth_service.dart';
 import '../services/database_service.dart';
 
-void showCreateAccountDialog(BuildContext context) {
+void showCreateAccountDialog(
+  BuildContext context, {
+  VoidCallback? onAccountCreated,
+}) {
   final nameController = TextEditingController();
   final emailController = TextEditingController();
   final passwordController = TextEditingController();
@@ -10,7 +12,6 @@ void showCreateAccountDialog(BuildContext context) {
   String selectedRole = 'Authorized Spender';
   bool obscurePassword = true;
   bool isLoading = false;
-  final AuthService _authService = AuthService();
   final DatabaseService _databaseService = DatabaseService();
 
   showDialog(
@@ -151,22 +152,21 @@ void showCreateAccountDialog(BuildContext context) {
                       });
 
                       try {
-                        // Create account using the auth service
-                        bool success = await _authService.createAccount(
-                          emailController.text,
-                          passwordController.text,
-                          nameController.text,
-                          selectedRole,
-                        );
+                        // Create user directly with database service
+                        bool success = await _databaseService.createUser({
+                          'name': nameController.text,
+                          'email': emailController.text,
+                          'role': selectedRole,
+                        });
 
                         if (success) {
-                          // Log activity
-                          await _databaseService.logActivity(
-                            'New account created: ${emailController.text}',
-                            'Account Management',
-                          );
-
                           Navigator.pop(context);
+
+                          // Call the callback if provided
+                          if (onAccountCreated != null) {
+                            onAccountCreated();
+                          }
+
                           ScaffoldMessenger.of(context).showSnackBar(
                             const SnackBar(
                               content: Text('Account created successfully'),

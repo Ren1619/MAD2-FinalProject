@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import 'login_page.dart';
 import 'otp_verification_page.dart';
 import 'home_admin.dart';
 import 'services/database_helper.dart';
 import 'utils/debug_data.dart';
+import 'services/database_service.dart';
 
 void main() async {
   // Ensure Flutter is initialized
@@ -15,7 +17,13 @@ void main() async {
   // Populate debug data
   await DebugData.populateDebugData();
 
-  runApp(const MyApp());
+  runApp(
+    // Provide DatabaseService at the root level
+    ChangeNotifierProvider(
+      create: (context) => DatabaseService(),
+      child: const MyApp(),
+    ),
+  );
 }
 
 class MyApp extends StatelessWidget {
@@ -41,11 +49,14 @@ class MyApp extends StatelessWidget {
           ),
         ),
       ),
-      initialRoute: '/home ',
+      // Set the initial route directly to home to bypass login
+      initialRoute: '/home',
       routes: {
         '/login': (context) => const LoginPage(),
         '/home': (context) => const HomeAdminPage(),
       },
+      // Add additional fallback to ensure we go to home screen
+      home: const HomeAdminPage(),
     );
   }
 }

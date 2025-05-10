@@ -1,6 +1,7 @@
 // lib/accounts/accounts_page.dart
 
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import '../services/database_service.dart';
 import '../widgets/common_widgets.dart';
 import './create_account_dialog.dart';
@@ -13,14 +14,41 @@ class AccountsPage extends StatefulWidget {
 }
 
 class _AccountsPageState extends State<AccountsPage> {
-  final DatabaseService _databaseService = DatabaseService();
+  late DatabaseService _databaseService;
   bool _isLoading = true;
   List<Map<String, dynamic>> _accounts = [];
   String _searchQuery = '';
 
+  // Add refresh indicator key
+  final GlobalKey<RefreshIndicatorState> _refreshIndicatorKey =
+      GlobalKey<RefreshIndicatorState>();
+
   @override
   void initState() {
     super.initState();
+    // fetchAccounts will be called in didChangeDependencies
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // Get the database service from provider
+    _databaseService = Provider.of<DatabaseService>(context);
+    _fetchAccounts();
+
+    // If not using provider, uncomment this line:
+    // _databaseService.addListener(_onDatabaseChanged);
+  }
+
+  @override
+  void dispose() {
+    // If not using provider, uncomment this line:
+    // _databaseService.removeListener(_onDatabaseChanged);
+    super.dispose();
+  }
+
+  // Callback for database changes
+  void _onDatabaseChanged() {
     _fetchAccounts();
   }
 
@@ -34,9 +62,11 @@ class _AccountsPageState extends State<AccountsPage> {
     } catch (e) {
       print('Error fetching accounts: $e');
     } finally {
-      setState(() {
-        _isLoading = false;
-      });
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
     }
   }
 
@@ -69,15 +99,8 @@ class _AccountsPageState extends State<AccountsPage> {
     try {
       await _databaseService.updateUserStatus(userId, newStatus);
 
-      // Update local list
-      setState(() {
-        final index = _accounts.indexWhere(
-          (account) => account['id'] == userId,
-        );
-        if (index != -1) {
-          _accounts[index]['status'] = newStatus;
-        }
-      });
+      // Force refresh accounts list
+      _fetchAccounts();
 
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('User status updated to $newStatus')),
@@ -91,104 +114,140 @@ class _AccountsPageState extends State<AccountsPage> {
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.all(16.0),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Search and filter row with responsive layout
-          LayoutBuilder(
-            builder: (context, constraints) {
-              if (constraints.maxWidth < 600) {
-                // Mobile layout - stack vertically
-                return Column(
-                  children: [
-                    CustomSearchField(
-                      hintText: 'Search accounts...',
-                      onChanged: (value) {
-                        setState(() {
-                          _searchQuery = value;
-                        });
-                      },
-                    ),
-                    const SizedBox(height: 12),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.end,
-                      children: [_buildFilterButton(context)],
-                    ),
-                  ],
-                );
-              } else {
-                // Desktop/tablet layout - row layout
-                return Row(
-                  children: [
-                    Expanded(
-                      child: CustomSearchField(
-                        hintText: 'Search accounts...',
-                        onChanged: (value) {
-                          setState(() {
-                            _searchQuery = value;
-                          });
-                        },
-                      ),
-                    ),
-                    const SizedBox(width: 16),
-                    _buildFilterButton(context),
-                  ],
-                );
-              }
-            },
-          ),
+    // Use Consumer to listen for changes to DatabaseService
+    return Consumer<DatabaseService>(
+      builder: (context, databaseService, child) {
+        // Fetch accounts when the database service changes
+        if (!_isLoading) {
+          _fetchAccounts();
+        }
 
-          const SizedBox(height: 20),
+        return RefreshIndicator(
+          key: _refreshIndicatorKey,
+          onRefresh: _fetchAccounts,
+          child: Padding(
+            padding: const EdgeInsets.all(16.0),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Search and filter row with responsive layout
+                LayoutBuilder(
+                  builder: (context, constraints) {
+                    if (constraints.maxWidth < 600) {
+                      // Mobile layout - stack vertically
+                      return Column(
+                        children: [
+                          CustomSearchField(
+                            hintText: 'Search accounts...',
+                            onChanged: (value) {
+                              setState(() {
+                                _searchQuery = value;
+                              });
+                            },
+                          ),
+                          const SizedBox(height: 12),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.end,
+                            children: [_buildFilterButton(context)],
+                          ),
+                        ],
+                      );
+                    } else {
+                      // Desktop/tablet layout - row layout
+                      return Row(
+                        children: [
+                          Expanded(
+                            child: CustomSearchField(
+                              hintText: 'Search accounts...',
+                              onChanged: (value) {
+                                setState(() {
+                                  _searchQuery = value;
+                                });
+                              },
+                            ),
+                          ),
+                          const SizedBox(width: 16),
+                          _buildFilterButton(context),
+                        ],
+                      );
+                    }
+                  },
+                ),
 
-          // Account cards with responsive list
-          Expanded(
-            child:
-                _isLoading
-                    ? const Center(child: CircularProgressIndicator())
-                    : _filteredAccounts.isEmpty
-                    ? EmptyStateWidget(
-                      message: 'No accounts found',
-                      icon: Icons.person_off,
-                      actionLabel: 'Create Account',
-                      onActionPressed: () => showCreateAccountDialog(context),
-                    )
-                    : LayoutBuilder(
-                      builder: (context, constraints) {
-                        if (constraints.maxWidth < 600) {
-                          // Mobile layout - simplified cards
-                          return ListView.builder(
-                            itemCount: _filteredAccounts.length,
-                            itemBuilder: (context, index) {
-                              final account = _filteredAccounts[index];
-                              return _buildMobileAccountCard(context, account);
+                const SizedBox(height: 20),
+
+                // Account cards with responsive list
+                Expanded(
+                  child:
+                      _isLoading
+                          ? const Center(child: CircularProgressIndicator())
+                          : _filteredAccounts.isEmpty
+                          ? EmptyStateWidget(
+                            message: 'No accounts found',
+                            icon: Icons.person_off,
+                            actionLabel: 'Create Account',
+                            onActionPressed:
+                                () => _showCreateAccountDialogWithRefresh(
+                                  context,
+                                ),
+                          )
+                          : LayoutBuilder(
+                            builder: (context, constraints) {
+                              if (constraints.maxWidth < 600) {
+                                // Mobile layout - simplified cards
+                                return ListView.builder(
+                                  itemCount: _filteredAccounts.length,
+                                  itemBuilder: (context, index) {
+                                    final account = _filteredAccounts[index];
+                                    return _buildMobileAccountCard(
+                                      context,
+                                      account,
+                                    );
+                                  },
+                                );
+                              } else if (constraints.maxWidth < 960) {
+                                // Tablet layout - more detailed but still compact
+                                return ListView.builder(
+                                  itemCount: _filteredAccounts.length,
+                                  itemBuilder: (context, index) {
+                                    final account = _filteredAccounts[index];
+                                    return _buildTabletAccountCard(
+                                      context,
+                                      account,
+                                    );
+                                  },
+                                );
+                              } else {
+                                // Desktop layout - full details
+                                return ListView.builder(
+                                  itemCount: _filteredAccounts.length,
+                                  itemBuilder: (context, index) {
+                                    final account = _filteredAccounts[index];
+                                    return _buildDesktopAccountCard(
+                                      context,
+                                      account,
+                                    );
+                                  },
+                                );
+                              }
                             },
-                          );
-                        } else if (constraints.maxWidth < 960) {
-                          // Tablet layout - more detailed but still compact
-                          return ListView.builder(
-                            itemCount: _filteredAccounts.length,
-                            itemBuilder: (context, index) {
-                              final account = _filteredAccounts[index];
-                              return _buildTabletAccountCard(context, account);
-                            },
-                          );
-                        } else {
-                          // Desktop layout - full details
-                          return ListView.builder(
-                            itemCount: _filteredAccounts.length,
-                            itemBuilder: (context, index) {
-                              final account = _filteredAccounts[index];
-                              return _buildDesktopAccountCard(context, account);
-                            },
-                          );
-                        }
-                      },
-                    ),
+                          ),
+                ),
+              ],
+            ),
           ),
-        ],
-      ),
+        );
+      },
+    );
+  }
+
+  // Custom wrapper for create account dialog that ensures refresh
+  void _showCreateAccountDialogWithRefresh(BuildContext context) {
+    showCreateAccountDialog(
+      context,
+      onAccountCreated: () {
+        _fetchAccounts();
+      },
     );
   }
 

@@ -1,9 +1,11 @@
+import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../utils/uuid_generator.dart';
 import 'database_helper.dart';
 import 'auth_service.dart';
 
-class DatabaseService {
+// Make DatabaseService extend ChangeNotifier for observer pattern
+class DatabaseService extends ChangeNotifier {
   final DatabaseHelper _dbHelper = DatabaseHelper();
   final AuthService _authService = AuthService();
 
@@ -19,8 +21,12 @@ class DatabaseService {
 
   Future<bool> createBudget(Map<String, dynamic> budgetData) async {
     try {
-      // Get current user
-      Map<String, dynamic>? currentUser = await _authService.currentUser;
+      // Get current user (simplified for demo)
+      Map<String, dynamic> currentUser = {
+        'id': 'demo-user-id',
+        'email': 'admin@example.com',
+        'name': 'Admin User',
+      };
 
       // Add additional budget data
       String id = UuidGenerator.generateUuid();
@@ -29,8 +35,8 @@ class DatabaseService {
         ...budgetData,
         'dateSubmitted': DateTime.now().toIso8601String(),
         'status': 'Pending',
-        'submittedBy': currentUser?['id'],
-        'submittedByEmail': currentUser?['email'],
+        'submittedBy': currentUser['id'],
+        'submittedByEmail': currentUser['email'],
       };
 
       await _dbHelper.insertBudget(newBudget);
@@ -40,6 +46,9 @@ class DatabaseService {
         'New budget submitted: ${budgetData['name']}',
         'Budget',
       );
+
+      // Notify listeners about the change
+      notifyListeners();
 
       return true;
     } catch (e) {
@@ -84,6 +93,9 @@ class DatabaseService {
           'Budget status updated to $newStatus: ${budget['name']}';
       await logActivity(description, 'Budget');
 
+      // Notify listeners about the change
+      notifyListeners();
+
       return true;
     } catch (e) {
       print('Error updating budget status: $e');
@@ -109,9 +121,53 @@ class DatabaseService {
       String description = 'User status updated to $newStatus';
       await logActivity(description, 'Account Management');
 
+      // Notify listeners about the change
+      notifyListeners();
+
       return true;
     } catch (e) {
       print('Error updating user status: $e');
+      return false;
+    }
+  }
+
+  // Simplified user create method without authentication
+  Future<bool> createUser(Map<String, dynamic> userData) async {
+    try {
+      // Check if user with this email already exists
+      Map<String, dynamic>? existingUser = await _dbHelper.getUserByEmail(
+        userData['email'],
+      );
+
+      if (existingUser != null) {
+        return false; // User already exists
+      }
+
+      // Create new user
+      String id = UuidGenerator.generateUuid();
+      Map<String, dynamic> newUser = {
+        'id': id,
+        'name': userData['name'],
+        'email': userData['email'],
+        'role': userData['role'],
+        'status': 'Active',
+        'createdAt': DateTime.now().toIso8601String(),
+      };
+
+      await _dbHelper.insertUser(newUser);
+
+      // Log activity
+      await logActivity(
+        'New account created: ${userData['email']}',
+        'Account Management',
+      );
+
+      // Notify listeners about the change
+      notifyListeners();
+
+      return true;
+    } catch (e) {
+      print('Error creating user: $e');
       return false;
     }
   }
@@ -128,17 +184,25 @@ class DatabaseService {
 
   Future<void> logActivity(String description, String type) async {
     try {
-      // Get current user
-      Map<String, dynamic>? currentUser = await _authService.currentUser;
+      // Simplified logging without user info
+      Map<String, dynamic> currentUser = {
+        'name': 'Admin User',
+        'email': 'admin@example.com',
+      };
 
       await _dbHelper.insertLog({
         'id': UuidGenerator.generateUuid(),
         'description': description,
         'timestamp': DateTime.now().toIso8601String(),
         'type': type,
-        'user': currentUser?['name'] ?? 'System',
+        'user': currentUser['name'],
         'ip': '127.0.0.1',
       });
+
+      // Notify listeners if this is a significant activity
+      if (type != 'System') {
+        notifyListeners();
+      }
     } catch (e) {
       print('Error logging activity: $e');
     }
