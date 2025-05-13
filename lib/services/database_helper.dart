@@ -25,7 +25,7 @@ class DatabaseHelper {
 
     var db = await openDatabase(
       path,
-      version: 2,
+      version: 3,
       onCreate: _createDb,
       onUpgrade: _onUpgrade,
     );
@@ -108,6 +108,39 @@ class DatabaseHelper {
     );
     await db.execute('CREATE INDEX idx_budgets_company ON budgets(companyId)');
 
+    // Create expenses table
+    await db.execute('''
+    CREATE TABLE expenses(
+      id TEXT PRIMARY KEY,
+      description TEXT NOT NULL,
+      amount REAL NOT NULL,
+      date TEXT NOT NULL,
+      category TEXT NOT NULL,
+      approvedBy TEXT,
+      receipt INTEGER NOT NULL DEFAULT 0,
+      status TEXT NOT NULL,
+      paymentMethod TEXT NOT NULL,
+      budgetId TEXT,
+      userId TEXT,
+      companyId TEXT,
+      FOREIGN KEY (budgetId) REFERENCES budgets(id),
+      FOREIGN KEY (userId) REFERENCES users(id),
+      FOREIGN KEY (companyId) REFERENCES companies(id)
+    )
+  ''');
+
+    // Add indexes for expenses
+    await db.execute('CREATE INDEX idx_expenses_status ON expenses(status)');
+    await db.execute(
+      'CREATE INDEX idx_expenses_category ON expenses(category)',
+    );
+    await db.execute('CREATE INDEX idx_expenses_date ON expenses(date)');
+    await db.execute('CREATE INDEX idx_expenses_budget ON expenses(budgetId)');
+    await db.execute('CREATE INDEX idx_expenses_user ON expenses(userId)');
+    await db.execute(
+      'CREATE INDEX idx_expenses_company ON expenses(companyId)',
+    );
+
     // Create logs table with indexes
     await db.execute('''
     CREATE TABLE logs(
@@ -172,6 +205,43 @@ class DatabaseHelper {
       );
       await db.execute('CREATE INDEX idx_logs_company ON logs(companyId)');
     }
+
+    if (oldVersion < 3) {
+      // Add expenses table if upgrading from version 2
+      await db.execute('''
+      CREATE TABLE expenses(
+        id TEXT PRIMARY KEY,
+        description TEXT NOT NULL,
+        amount REAL NOT NULL,
+        date TEXT NOT NULL,
+        category TEXT NOT NULL,
+        approvedBy TEXT,
+        receipt INTEGER NOT NULL DEFAULT 0,
+        status TEXT NOT NULL,
+        paymentMethod TEXT NOT NULL,
+        budgetId TEXT,
+        userId TEXT,
+        companyId TEXT,
+        FOREIGN KEY (budgetId) REFERENCES budgets(id),
+        FOREIGN KEY (userId) REFERENCES users(id),
+        FOREIGN KEY (companyId) REFERENCES companies(id)
+      )
+    ''');
+
+      // Add indexes for expenses
+      await db.execute('CREATE INDEX idx_expenses_status ON expenses(status)');
+      await db.execute(
+        'CREATE INDEX idx_expenses_category ON expenses(category)',
+      );
+      await db.execute('CREATE INDEX idx_expenses_date ON expenses(date)');
+      await db.execute(
+        'CREATE INDEX idx_expenses_budget ON expenses(budgetId)',
+      );
+      await db.execute('CREATE INDEX idx_expenses_user ON expenses(userId)');
+      await db.execute(
+        'CREATE INDEX idx_expenses_company ON expenses(companyId)',
+      );
+    }
   }
 
   // Company operations
@@ -202,28 +272,30 @@ class DatabaseHelper {
     return await db.query('companies', orderBy: 'name ASC');
   }
 
-  Future<String> insertCompany(Company company) async {
+  Future<String> insertCompany(Map<String, dynamic> company) async {
     Database db = await database;
 
     // Generate a new UUID for the company if not provided
     String companyId =
-        company.id.isEmpty ? UuidGenerator.generateUuid() : company.id;
+        company['id'] != null && company['id'].isNotEmpty
+            ? company['id']
+            : UuidGenerator.generateUuid();
 
     // Create a map with the company ID
-    Map<String, dynamic> companyMap = company.toMap();
+    Map<String, dynamic> companyMap = {...company};
     companyMap['id'] = companyId;
 
     await db.insert('companies', companyMap);
     return companyId;
   }
 
-  Future<int> updateCompany(Company company) async {
+  Future<int> updateCompany(Map<String, dynamic> company) async {
     Database db = await database;
     return await db.update(
       'companies',
-      company.toMap(),
+      company,
       where: 'id = ?',
-      whereArgs: [company.id],
+      whereArgs: [company['id']],
     );
   }
 
@@ -422,6 +494,126 @@ class DatabaseHelper {
   Future<int> deleteBudget(String id) async {
     Database db = await database;
     return await db.delete('budgets', where: 'id = ?', whereArgs: [id]);
+  }
+
+  // Expenses Operations
+  Future<List<Map<String, dynamic>>> getExpenses({
+    int limit = 50,
+    int offset = 0,
+    String? budgetId,
+    String? userId,
+    String? companyId,
+    String? category,
+    String? status,
+  }) async {
+    try {
+      Database db = await database;
+
+      List<String> whereConditions = [];
+      List<dynamic> whereArgs = [];
+
+      if (budgetId != null) {
+        whereConditions.add('budgetId = ?');
+        whereArgs.add(budgetId);
+      }
+
+      if (userId != null) {
+        whereConditions.add('userId = ?');
+        whereArgs.add(userId);
+      }
+
+      if (companyId != null) {
+        whereConditions.add('companyId = ?');
+        whereArgs.add(companyId);
+      }
+
+      if (category != null) {
+        whereConditions.add('category = ?');
+        whereArgs.add(category);
+      }
+
+      if (status != null) {
+        whereConditions.add('status = ?');
+        whereArgs.add(status);
+      }
+
+      String whereClause =
+          whereConditions.isEmpty ? '' : whereConditions.join(' AND ');
+
+      return await db.query(
+        'expenses',
+        where: whereClause.isEmpty ? null : whereClause,
+        whereArgs: whereArgs.isEmpty ? null : whereArgs,
+        orderBy: 'date DESC',
+        limit: limit,
+        offset: offset,
+      );
+    } catch (e) {
+      print('Error in getExpenses: $e');
+      return [];
+    }
+  }
+
+  Future<Map<String, dynamic>?> getExpenseById(String id) async {
+    Database db = await database;
+    List<Map<String, dynamic>> results = await db.query(
+      'expenses',
+      where: 'id = ?',
+      whereArgs: [id],
+    );
+
+    return results.isNotEmpty ? results.first : null;
+  }
+
+  Future<List<Map<String, dynamic>>> getExpensesByBudget(
+    String budgetId,
+  ) async {
+    Database db = await database;
+    return await db.query(
+      'expenses',
+      where: 'budgetId = ?',
+      whereArgs: [budgetId],
+      orderBy: 'date DESC',
+    );
+  }
+
+  Future<int> insertExpense(Map<String, dynamic> expense) async {
+    Database db = await database;
+    return await db.insert('expenses', expense);
+  }
+
+  Future<int> updateExpense(Map<String, dynamic> expense) async {
+    Database db = await database;
+    return await db.update(
+      'expenses',
+      expense,
+      where: 'id = ?',
+      whereArgs: [expense['id']],
+    );
+  }
+
+  Future<int> updateExpenseStatus(
+    String id,
+    String status, {
+    String? approvedBy,
+  }) async {
+    Database db = await database;
+    Map<String, dynamic> updateData = {'status': status};
+    if (approvedBy != null) {
+      updateData['approvedBy'] = approvedBy;
+    }
+
+    return await db.update(
+      'expenses',
+      updateData,
+      where: 'id = ?',
+      whereArgs: [id],
+    );
+  }
+
+  Future<int> deleteExpense(String id) async {
+    Database db = await database;
+    return await db.delete('expenses', where: 'id = ?', whereArgs: [id]);
   }
 
   // Logs Operations with company support

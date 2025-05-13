@@ -7,6 +7,7 @@ import 'home_admin.dart';
 import 'services/database_helper.dart';
 import 'services/database_service.dart';
 import 'services/auth_service.dart';
+import 'utils/debug_data.dart';
 
 void main() async {
   // Ensure Flutter is initialized
@@ -20,6 +21,9 @@ void main() async {
 
   // Create initial admin user if database is empty
   await authService.createInitialAdminIfNeeded();
+
+  // Populate debug data if in development mode
+  await DebugData.populateDebugData();
 
   runApp(
     // Provide DatabaseService at the root level
@@ -59,6 +63,8 @@ class MyApp extends StatelessWidget {
         '/login': (context) => const LoginPage(),
         '/signup': (context) => const SignupPage(),
         '/home': (context) => const HomeAdminPage(),
+        '/verify':
+            (context) => const OtpVerificationPage(email: 'user@example.com'),
       },
     );
   }

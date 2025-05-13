@@ -1,5 +1,6 @@
 import 'package:shared_preferences/shared_preferences.dart';
 import '../utils/uuid_generator.dart';
+import '../models/company_model.dart';
 import 'database_helper.dart';
 
 class AuthService {
@@ -66,6 +67,74 @@ class AuthService {
       return false;
     } catch (e) {
       print('Error signing in: $e');
+      return false;
+    }
+  }
+
+  // Register a new company and admin user
+  Future<bool> registerCompanyAndAdmin({
+    required Company company,
+    required String adminName,
+    required String adminEmail,
+    required String adminPassword,
+    required String adminRole,
+    String? adminPhone,
+    bool enableNotifications = true,
+  }) async {
+    try {
+      // Check if admin email already exists
+      Map<String, dynamic>? existingUser = await _dbHelper.getUserByEmail(
+        adminEmail,
+      );
+
+      if (existingUser != null) {
+        return false; // Admin email already exists
+      }
+
+      // Check if company email already exists
+      Map<String, dynamic>? existingCompany = await _dbHelper.getCompanyByEmail(
+        company.email,
+      );
+
+      if (existingCompany != null) {
+        return false; // Company email already exists
+      }
+
+      // Insert company first
+      Map<String, dynamic> companyMap = company.toMap();
+      String companyId = await _dbHelper.insertCompany(companyMap);
+
+      // Create admin user
+      String adminId = UuidGenerator.generateUuid();
+      Map<String, dynamic> adminUser = {
+        'id': adminId,
+        'name': adminName,
+        'email': adminEmail,
+        'role': adminRole,
+        'status': 'Active',
+        'createdAt': DateTime.now().toIso8601String(),
+        'companyId': companyId,
+        'phone': adminPhone ?? '',
+        'enableNotifications': enableNotifications ? 1 : 0,
+      };
+
+      await _dbHelper.insertUser(adminUser);
+
+      // Log activity
+      await _dbHelper.insertLog({
+        'id': UuidGenerator.generateUuid(),
+        'description':
+            'New company registered: ${company.name} with admin: $adminEmail',
+        'timestamp': DateTime.now().toIso8601String(),
+        'type': 'Account Management',
+        'user': 'System',
+        'ip': '127.0.0.1',
+        'companyId': companyId,
+      });
+
+      return true;
+    } catch (e) {
+      print('Error registering company and admin: $e');
       return false;
     }
   }

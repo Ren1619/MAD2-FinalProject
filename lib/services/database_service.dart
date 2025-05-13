@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import '../utils/uuid_generator.dart';
+import '../models/expense_model.dart';
 import 'database_helper.dart';
 import 'auth_service.dart';
 
@@ -19,7 +20,6 @@ class DatabaseService extends ChangeNotifier {
   }
 
   // Improved implementation of createBudget method in DatabaseService
-
   Future<bool> createBudget(Map<String, dynamic> budgetData) async {
     if (budgetData['name'] == null ||
         budgetData['budget'] == null ||
@@ -44,6 +44,7 @@ class DatabaseService extends ChangeNotifier {
         'status': 'Pending',
         'submittedBy': currentUser['id'],
         'submittedByEmail': currentUser['email'],
+        'companyId': currentUser['companyId'],
       };
 
       // Validate budget amount is a proper number
@@ -160,6 +161,182 @@ class DatabaseService extends ChangeNotifier {
     }
   }
 
+  // Expense methods
+  Future<List<Map<String, dynamic>>> fetchExpenses({
+    String? budgetId,
+    String? category,
+    String? status,
+  }) async {
+    try {
+      // Get current user
+      Map<String, dynamic>? currentUser = await _authService.currentUser;
+      String? companyId = currentUser?['companyId'];
+
+      return await _dbHelper.getExpenses(
+        budgetId: budgetId,
+        companyId: companyId,
+        category: category,
+        status: status,
+      );
+    } catch (e) {
+      print('Error fetching expenses: $e');
+      return [];
+    }
+  }
+
+  Future<bool> createExpense(Map<String, dynamic> expenseData) async {
+    if (expenseData['description'] == null ||
+        expenseData['amount'] == null ||
+        expenseData['category'] == null) {
+      print('Error: Missing required expense fields');
+      return false;
+    }
+
+    try {
+      // Get current user
+      Map<String, dynamic>? currentUser = await _authService.currentUser;
+      if (currentUser == null) {
+        return false; // Cannot create expense without a user
+      }
+
+      // Add additional expense data
+      String id = UuidGenerator.generateUuid();
+      Map<String, dynamic> newExpense = {
+        'id': id,
+        ...expenseData,
+        'date': expenseData['date'] ?? DateTime.now().toIso8601String(),
+        'status': 'Pending',
+        'userId': currentUser['id'],
+        'companyId': currentUser['companyId'],
+      };
+
+      // Validate amount is a proper number
+      double? amount;
+      if (newExpense['amount'] is String) {
+        amount = double.tryParse(newExpense['amount']);
+        if (amount == null) return false;
+        newExpense['amount'] = amount;
+      } else if (newExpense['amount'] is int) {
+        newExpense['amount'] = (newExpense['amount'] as int).toDouble();
+      } else if (newExpense['amount'] is! double) {
+        return false;
+      }
+
+      await _dbHelper.insertExpense(newExpense);
+
+      // Log activity
+      await logActivity(
+        'New expense submitted: ${expenseData['description']} - ${_formatCurrency(newExpense['amount'])}',
+        'Budget',
+      );
+
+      // Notify listeners about the change
+      notifyListeners();
+
+      return true;
+    } catch (e) {
+      print('Error creating expense: $e');
+      return false;
+    }
+  }
+
+  Future<bool> updateExpenseStatus(String expenseId, String newStatus) async {
+    try {
+      // Get expense
+      Map<String, dynamic>? expense = await _dbHelper.getExpenseById(expenseId);
+      if (expense == null) {
+        return false;
+      }
+
+      // Get current user for approver info
+      Map<String, dynamic>? currentUser = await _authService.currentUser;
+      String? approverName = currentUser?['name'];
+
+      // Update status
+      await _dbHelper.updateExpenseStatus(
+        expenseId,
+        newStatus,
+        approvedBy: newStatus == 'Approved' ? approverName : null,
+      );
+
+      // Log activity
+      String description =
+          'Expense status updated to $newStatus: ${expense['description']}';
+      await logActivity(description, 'Budget');
+
+      // Notify listeners about the change
+      notifyListeners();
+
+      return true;
+    } catch (e) {
+      print('Error updating expense status: $e');
+      return false;
+    }
+  }
+
+  Future<bool> updateExpense(Map<String, dynamic> expenseData) async {
+    if (expenseData['id'] == null ||
+        expenseData['description'] == null ||
+        expenseData['amount'] == null ||
+        expenseData['category'] == null) {
+      print('Error: Missing required expense fields');
+      return false;
+    }
+
+    try {
+      // Validate amount is a proper number
+      if (expenseData['amount'] is String) {
+        final amount = double.tryParse(expenseData['amount']);
+        if (amount == null) return false;
+        expenseData['amount'] = amount;
+      } else if (expenseData['amount'] is int) {
+        expenseData['amount'] = (expenseData['amount'] as int).toDouble();
+      } else if (expenseData['amount'] is! double) {
+        return false;
+      }
+
+      await _dbHelper.updateExpense(expenseData);
+
+      // Log activity
+      await logActivity(
+        'Expense updated: ${expenseData['description']}',
+        'Budget',
+      );
+
+      // Notify listeners about the change
+      notifyListeners();
+
+      return true;
+    } catch (e) {
+      print('Error updating expense: $e');
+      return false;
+    }
+  }
+
+  Future<bool> deleteExpense(String expenseId) async {
+    try {
+      // Get expense details for logging
+      Map<String, dynamic>? expense = await _dbHelper.getExpenseById(expenseId);
+      if (expense == null) {
+        return false;
+      }
+
+      // Delete expense
+      await _dbHelper.deleteExpense(expenseId);
+
+      // Log activity
+      await logActivity('Expense deleted: ${expense['description']}', 'Budget');
+
+      // Notify listeners about the change
+      notifyListeners();
+
+      return true;
+    } catch (e) {
+      print('Error deleting expense: $e');
+      return false;
+    }
+  }
+
   // User account methods
   Future<List<Map<String, dynamic>>> fetchUsers() async {
     try {
@@ -218,6 +395,12 @@ class DatabaseService extends ChangeNotifier {
         'status': 'Active',
         'createdAt': DateTime.now().toIso8601String(),
       };
+
+      // Get current user for company ID
+      Map<String, dynamic>? currentUser = await _authService.currentUser;
+      if (currentUser != null && currentUser['companyId'] != null) {
+        newUser['companyId'] = currentUser['companyId'];
+      }
 
       await _dbHelper.insertUser(newUser);
 
@@ -284,9 +467,11 @@ class DatabaseService extends ChangeNotifier {
       // Get current user information for the log
       Map<String, dynamic>? currentUser = await _authService.currentUser;
       String userName = 'System';
+      String? companyId;
 
       if (currentUser != null) {
         userName = currentUser['name'];
+        companyId = currentUser['companyId'];
       }
 
       await _dbHelper.insertLog({
@@ -296,6 +481,7 @@ class DatabaseService extends ChangeNotifier {
         'type': type,
         'user': userName,
         'ip': '127.0.0.1',
+        'companyId': companyId,
       });
 
       // Notify listeners if this is a significant activity
