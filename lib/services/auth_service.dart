@@ -5,44 +5,72 @@ import 'database_helper.dart';
 class AuthService {
   final DatabaseHelper _dbHelper = DatabaseHelper();
 
-  // Mock user information for development
-  final Map<String, dynamic> _mockUser = {
-    'id': 'admin-user-id',
-    'name': 'Admin User',
-    'email': 'admin@example.com',
-    'role': 'Budget Manager',
-    'status': 'Active',
-    'createdAt': '2024-01-01T00:00:00.000Z',
-  };
+  // Create an initial admin user if needed
+  Future<void> createInitialAdminIfNeeded() async {
+    final List<Map<String, dynamic>> existingUsers = await _dbHelper.getUsers();
 
-  // Get current user (bypassing real authentication)
-  Future<Map<String, dynamic>?> get currentUser async {
-    // Always return the mock user for development
-    return _mockUser;
-  }
-
-  // Mock sign in (always returns success)
-  Future<bool> signInWithEmail(String email, String password) async {
-    try {
-      // For development, always return successful login
-      // Log activity
-      await _dbHelper.insertLog({
-        'id': UuidGenerator.generateUuid(),
-        'description': 'User login: $email',
-        'timestamp': DateTime.now().toIso8601String(),
-        'type': 'Authentication',
-        'user': _mockUser['name'],
-        'ip': '127.0.0.1',
+    if (existingUsers.isEmpty) {
+      // Create a default admin user
+      String adminId = UuidGenerator.generateUuid();
+      await _dbHelper.insertUser({
+        'id': adminId,
+        'name': 'Admin User',
+        'email': 'admin@example.com',
+        'role': 'Budget Manager',
+        'status': 'Active',
+        'createdAt': DateTime.now().toIso8601String(),
       });
 
-      return true;
+      // Log admin creation
+      await _dbHelper.insertLog({
+        'id': UuidGenerator.generateUuid(),
+        'description': 'System initialized with admin user',
+        'timestamp': DateTime.now().toIso8601String(),
+        'type': 'System',
+        'user': 'System',
+        'ip': '127.0.0.1',
+      });
+    }
+  }
+
+  // Get current user
+  Future<Map<String, dynamic>?> get currentUser async {
+    // For simplicity, we'll return the first active user in the database
+    final List<Map<String, dynamic>> activeUsers = await _dbHelper
+        .getUsersByStatus('Active');
+    if (activeUsers.isNotEmpty) {
+      return activeUsers.first;
+    }
+    return null;
+  }
+
+  // Sign in
+  Future<bool> signInWithEmail(String email, String password) async {
+    try {
+      // Check if user exists and is active
+      Map<String, dynamic>? user = await _dbHelper.getUserByEmail(email);
+
+      if (user != null && user['status'] == 'Active') {
+        // Log activity
+        await _dbHelper.insertLog({
+          'id': UuidGenerator.generateUuid(),
+          'description': 'User login: $email',
+          'timestamp': DateTime.now().toIso8601String(),
+          'type': 'Authentication',
+          'user': user['name'],
+          'ip': '127.0.0.1',
+        });
+
+        return true;
+      }
+      return false;
     } catch (e) {
       print('Error signing in: $e');
       return false;
     }
   }
 
-  // Create a new user account (simplified)
+  // Create a new user account
   Future<bool> createAccount(
     String email,
     String password,
@@ -89,16 +117,19 @@ class AuthService {
     }
   }
 
-  // Sign out (simplified)
+  // Sign out
   Future<void> signOut() async {
     try {
+      // Get current user for logging
+      Map<String, dynamic>? user = await currentUser;
+
       // Log activity
       await _dbHelper.insertLog({
         'id': UuidGenerator.generateUuid(),
-        'description': 'User signed out: ${_mockUser['email']}',
+        'description': 'User signed out: ${user?['email'] ?? 'Unknown'}',
         'timestamp': DateTime.now().toIso8601String(),
         'type': 'Authentication',
-        'user': _mockUser['name'],
+        'user': user?['name'] ?? 'Unknown',
         'ip': '127.0.0.1',
       });
     } catch (e) {

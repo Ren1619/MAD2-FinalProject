@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'otp_verification_page.dart';
+import 'home_admin.dart';
 import 'services/auth_service.dart';
 import 'services/database_service.dart';
 import 'theme.dart';
@@ -21,7 +22,14 @@ class _LoginPageState extends State<LoginPage> {
   bool _obscureText = true;
   bool _isLoading = false;
   bool _skipOTP = true; // Toggle for development mode
-  bool _rememberMe = false;
+
+  @override
+  void initState() {
+    super.initState();
+    // Pre-fill with default admin credentials in development
+    _emailController.text = "admin@example.com";
+    _passwordController.text = "password";
+  }
 
   @override
   void dispose() {
@@ -64,7 +72,7 @@ class _LoginPageState extends State<LoginPage> {
               OtpVerificationPage(
                 email:
                     _emailController.text.isEmpty
-                        ? "user@example.com"
+                        ? "admin@example.com"
                         : _emailController.text,
               ),
             ),
@@ -100,6 +108,36 @@ class _LoginPageState extends State<LoginPage> {
     }
   }
 
+  // Skip login and go directly to home screen
+  void _skipLogin() async {
+    setState(() {
+      _isLoading = true;
+    });
+
+    try {
+      // Log skipped login for tracking
+      await _databaseService.logActivity(
+        'Login skipped (development mode)',
+        'Authentication',
+      );
+
+      // Go straight to home page
+      Navigator.of(context).pushNamedAndRemoveUntil('/home', (route) => false);
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error skipping login: ${e.toString()}'),
+          backgroundColor: Colors.red[700],
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+
+      setState(() {
+        _isLoading = false;
+      });
+    }
+  }
+
   void _handleForgotPassword() {
     final emailController = TextEditingController();
 
@@ -110,7 +148,7 @@ class _LoginPageState extends State<LoginPage> {
             title: Text(
               'Forgot Password',
               style: TextStyle(
-                color: AppTheme.primaryColor,
+                color: Colors.blue[800],
                 fontWeight: FontWeight.bold,
               ),
             ),
@@ -120,16 +158,19 @@ class _LoginPageState extends State<LoginPage> {
                 children: [
                   Text(
                     'Enter your email address to receive a password reset link.',
-                    style: TextStyle(color: AppTheme.textSecondary),
+                    style: TextStyle(color: Colors.grey[600]),
                   ),
                   const SizedBox(height: 20),
                   TextField(
                     controller: emailController,
                     keyboardType: TextInputType.emailAddress,
-                    decoration: AppTheme.inputDecoration(
+                    decoration: InputDecoration(
                       labelText: 'Email',
                       hintText: 'Enter your email',
-                      prefixIcon: Icons.email_outlined,
+                      prefixIcon: const Icon(Icons.email_outlined),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(10),
+                      ),
                     ),
                   ),
                 ],
@@ -141,14 +182,12 @@ class _LoginPageState extends State<LoginPage> {
             actions: [
               TextButton(
                 onPressed: () => Navigator.pop(context),
-                style: TextButton.styleFrom(
-                  foregroundColor: AppTheme.textSecondary,
-                ),
+                style: TextButton.styleFrom(foregroundColor: Colors.grey[600]),
                 child: const Text('Cancel'),
               ),
               ElevatedButton(
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: AppTheme.primaryColor,
+                  backgroundColor: Colors.blue[700],
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(8),
                   ),
@@ -222,10 +261,7 @@ class _LoginPageState extends State<LoginPage> {
                     gradient: LinearGradient(
                       begin: Alignment.topLeft,
                       end: Alignment.bottomRight,
-                      colors: [
-                        AppTheme.primaryColor,
-                        AppTheme.primaryDarkColor,
-                      ],
+                      colors: [Colors.blue[700]!, Colors.blue[900]!],
                     ),
                   ),
                   child: Column(
@@ -241,7 +277,7 @@ class _LoginPageState extends State<LoginPage> {
                         child: Icon(
                           Icons.account_balance_wallet,
                           size: 80,
-                          color: AppTheme.primaryColor,
+                          color: Colors.blue[700],
                         ),
                       ),
                       const SizedBox(height: 40),
@@ -294,7 +330,7 @@ class _LoginPageState extends State<LoginPage> {
                             child: Icon(
                               Icons.lock_outline,
                               size: 80,
-                              color: AppTheme.primaryColor,
+                              color: Colors.blue[700],
                             ),
                           ),
                           const SizedBox(height: 40.0),
@@ -306,7 +342,7 @@ class _LoginPageState extends State<LoginPage> {
                           style: TextStyle(
                             fontSize: 28,
                             fontWeight: FontWeight.bold,
-                            color: AppTheme.primaryColor,
+                            color: Colors.blue[700],
                           ),
                           textAlign: TextAlign.center,
                         ),
@@ -315,7 +351,7 @@ class _LoginPageState extends State<LoginPage> {
                           'Sign in to continue',
                           style: TextStyle(
                             fontSize: 16,
-                            color: AppTheme.textSecondary,
+                            color: Colors.grey[600],
                           ),
                           textAlign: TextAlign.center,
                         ),
@@ -325,10 +361,13 @@ class _LoginPageState extends State<LoginPage> {
                         TextFormField(
                           controller: _emailController,
                           keyboardType: TextInputType.emailAddress,
-                          decoration: AppTheme.inputDecoration(
+                          decoration: InputDecoration(
                             labelText: 'Email',
                             hintText: 'Enter your email',
-                            prefixIcon: Icons.email_outlined,
+                            prefixIcon: const Icon(Icons.email_outlined),
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(10),
+                            ),
                           ),
                           validator: (value) {
                             if (value == null || value.isEmpty) {
@@ -348,10 +387,10 @@ class _LoginPageState extends State<LoginPage> {
                         TextFormField(
                           controller: _passwordController,
                           obscureText: _obscureText,
-                          decoration: AppTheme.inputDecoration(
+                          decoration: InputDecoration(
                             labelText: 'Password',
                             hintText: 'Enter your password',
-                            prefixIcon: Icons.lock_outline,
+                            prefixIcon: const Icon(Icons.lock_outline),
                             suffixIcon: IconButton(
                               icon: Icon(
                                 _obscureText
@@ -364,6 +403,9 @@ class _LoginPageState extends State<LoginPage> {
                                   _obscureText = !_obscureText;
                                 });
                               },
+                            ),
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(10),
                             ),
                           ),
                           validator: (value) {
@@ -378,135 +420,80 @@ class _LoginPageState extends State<LoginPage> {
                         ),
                         const SizedBox(height: 16.0),
 
-                        // Remember me and Forgot Password row
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            Row(
-                              children: [
-                                SizedBox(
-                                  height: 24,
-                                  width: 24,
-                                  child: Checkbox(
-                                    value: _rememberMe,
-                                    activeColor: AppTheme.primaryColor,
-                                    shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(4),
-                                    ),
-                                    onChanged: (value) {
-                                      setState(() {
-                                        _rememberMe = value ?? false;
-                                      });
-                                    },
-                                  ),
-                                ),
-                                const SizedBox(width: 8),
-                                Text(
-                                  'Remember me',
-                                  style: TextStyle(
-                                    color: AppTheme.textSecondary,
-                                  ),
-                                ),
-                              ],
+                        // Forgot Password link
+                        Align(
+                          alignment: Alignment.centerRight,
+                          child: TextButton(
+                            onPressed: _handleForgotPassword,
+                            style: TextButton.styleFrom(
+                              padding: EdgeInsets.zero,
+                              minimumSize: const Size(50, 30),
+                              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                              foregroundColor: Colors.blue[700],
                             ),
-                            TextButton(
-                              onPressed: _handleForgotPassword,
-                              style: TextButton.styleFrom(
-                                padding: EdgeInsets.zero,
-                                minimumSize: const Size(50, 30),
-                                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                                foregroundColor: AppTheme.primaryColor,
-                              ),
-                              child: const Text(
-                                'Forgot Password?',
-                                style: TextStyle(fontWeight: FontWeight.bold),
-                              ),
+                            child: const Text(
+                              'Forgot Password?',
+                              style: TextStyle(fontWeight: FontWeight.bold),
                             ),
-                          ],
-                        ),
-
-                        // Development Mode Toggle with styled container
-                        Container(
-                          margin: const EdgeInsets.symmetric(vertical: 16),
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 12,
-                            vertical: 8,
-                          ),
-                          decoration: BoxDecoration(
-                            color: Colors.amber[50],
-                            borderRadius: BorderRadius.circular(8),
-                            border: Border.all(color: Colors.amber[200]!),
-                          ),
-                          child: Row(
-                            children: [
-                              Icon(
-                                Icons.developer_mode,
-                                color: Colors.amber[800],
-                                size: 20,
-                              ),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      'Development Mode',
-                                      style: TextStyle(
-                                        fontWeight: FontWeight.bold,
-                                        color: Colors.amber[800],
-                                      ),
-                                    ),
-                                    const SizedBox(height: 4),
-                                    Text(
-                                      'Skip verification for faster testing',
-                                      style: TextStyle(
-                                        fontSize: 12,
-                                        color: Colors.amber[800],
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                              Switch(
-                                value: _skipOTP,
-                                activeColor: Colors.amber[800],
-                                onChanged: (value) {
-                                  setState(() {
-                                    _skipOTP = value;
-                                  });
-                                },
-                              ),
-                            ],
                           ),
                         ),
                         const SizedBox(height: 24.0),
 
-                        // Login Button with gradient
-                        GradientButton(
-                          text: 'Log In',
-                          onPressed: _isLoading ? () {} : _handleLogin,
-                          colors: [
-                            AppTheme.primaryColor,
-                            AppTheme.primaryDarkColor,
-                          ],
-                          height: 56,
-                          icon: _isLoading ? null : Icons.login,
+                        // Login Button
+                        ElevatedButton(
+                          onPressed: _isLoading ? null : _handleLogin,
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.blue[700],
+                            padding: const EdgeInsets.symmetric(vertical: 16),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            disabledBackgroundColor: Colors.blue[300],
+                          ),
+                          child:
+                              _isLoading
+                                  ? const SizedBox(
+                                    width: 24,
+                                    height: 24,
+                                    child: CircularProgressIndicator(
+                                      color: Colors.white,
+                                      strokeWidth: 3,
+                                    ),
+                                  )
+                                  : const Text(
+                                    'Log In',
+                                    style: TextStyle(
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
                         ),
 
-                        if (_isLoading)
-                          Padding(
-                            padding: const EdgeInsets.only(top: 16.0),
-                            child: Center(
-                              child: SizedBox(
-                                width: 24,
-                                height: 24,
-                                child: CircularProgressIndicator(
-                                  color: AppTheme.primaryColor,
-                                  strokeWidth: 3,
-                                ),
+                        const SizedBox(height: 16.0),
+
+                        // Skip Login Button (Development Mode)
+                        Container(
+                          decoration: BoxDecoration(
+                            border: Border.all(color: Colors.amber),
+                            borderRadius: BorderRadius.circular(10),
+                            color: Colors.amber[50],
+                          ),
+                          child: TextButton.icon(
+                            icon: const Icon(Icons.developer_mode),
+                            label: const Text(
+                              'Skip Login (Development Mode)',
+                              style: TextStyle(fontWeight: FontWeight.bold),
+                            ),
+                            style: TextButton.styleFrom(
+                              foregroundColor: Colors.amber[800],
+                              minimumSize: const Size(double.infinity, 50),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(10),
                               ),
                             ),
+                            onPressed: _isLoading ? null : _skipLogin,
                           ),
+                        ),
 
                         const SizedBox(height: 24.0),
 
@@ -516,7 +503,7 @@ class _LoginPageState extends State<LoginPage> {
                             '© 2025 Budget Management System',
                             style: TextStyle(
                               fontSize: 12,
-                              color: AppTheme.textSecondary,
+                              color: Colors.grey[600],
                             ),
                           ),
                         ),

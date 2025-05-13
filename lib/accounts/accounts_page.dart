@@ -38,19 +38,41 @@ class AccountsPageState extends State<AccountsPage> {
 
   // Filter accounts based on search query
   List<Map<String, dynamic>> get _filteredAccounts {
-    if (_searchQuery.isEmpty) {
+    if (_searchQuery.isEmpty && _filterType == "All") {
       return _accounts;
     }
 
     return _accounts.where((account) {
-      final name = account['name']?.toString().toLowerCase() ?? '';
-      final email = account['email']?.toString().toLowerCase() ?? '';
-      final role = account['role']?.toString().toLowerCase() ?? '';
-      final query = _searchQuery.toLowerCase();
+      // Apply search query filter
+      bool matchesSearch = true;
+      if (_searchQuery.isNotEmpty) {
+        final name = account['name']?.toString().toLowerCase() ?? '';
+        final email = account['email']?.toString().toLowerCase() ?? '';
+        final role = account['role']?.toString().toLowerCase() ?? '';
+        final query = _searchQuery.toLowerCase();
 
-      return name.contains(query) ||
-          email.contains(query) ||
-          role.contains(query);
+        matchesSearch =
+            name.contains(query) ||
+            email.contains(query) ||
+            role.contains(query);
+      }
+
+      // Apply role/status filter
+      bool matchesFilter = true;
+      if (_filterType != "All") {
+        if (_filterType == "Active" || _filterType == "Inactive") {
+          matchesFilter = account['status'] == _filterType;
+        } else if (_filterType == "budget_manager") {
+          matchesFilter = account['role'] == "Budget Manager";
+        } else if (_filterType == "fp_manager") {
+          matchesFilter =
+              account['role'] == "Financial Planning and Analysis Manager";
+        } else if (_filterType == "spender") {
+          matchesFilter = account['role'] == "Authorized Spender";
+        }
+      }
+
+      return matchesSearch && matchesFilter;
     }).toList();
   }
 
@@ -118,7 +140,7 @@ class AccountsPageState extends State<AccountsPage> {
                 LayoutBuilder(
                   builder: (context, constraints) {
                     if (constraints.maxWidth < 600) {
-                      // Mobile layout - stack vertically
+                      // Mobile layout - stacked
                       return Column(
                         children: [
                           CustomSearchField(
@@ -278,23 +300,18 @@ class AccountsPageState extends State<AccountsPage> {
         setState(() {
           _filterType = value.toString();
         });
-        _fetchAccounts(); // Refresh the accounts with the new filter
       },
     );
   }
 
-  // Update to _fetchAccounts method in AccountsPage class
+  // Fetch accounts with current filter
   Future<void> _fetchAccounts() async {
     setState(() {
       _isLoading = true;
     });
 
     try {
-      if (_filterType == "All") {
-        _accounts = await _databaseService.fetchUsers();
-      } else {
-        _accounts = await _databaseService.getFilteredUsers(_filterType);
-      }
+      _accounts = await _databaseService.fetchUsers();
     } catch (e) {
       print('Error fetching accounts: $e');
     } finally {

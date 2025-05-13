@@ -49,14 +49,13 @@ class _HomeAdminPageState extends State<HomeAdminPage> {
     _loadUserInfo();
   }
 
-  // Simplified to work without real authentication
   Future<void> _loadUserInfo() async {
     setState(() {
       _isLoading = true;
     });
 
     try {
-      // Get current user info (now mocked in the AuthService)
+      // Get current user info
       final user = await _authService.currentUser;
       if (user != null) {
         setState(() {
@@ -119,9 +118,6 @@ class _HomeAdminPageState extends State<HomeAdminPage> {
                 case 'profile':
                   // Handle profile action
                   break;
-                case 'settings':
-                  // Handle settings action
-                  break;
                 case 'logout':
                   _handleLogout();
                   break;
@@ -136,16 +132,6 @@ class _HomeAdminPageState extends State<HomeAdminPage> {
                         Icon(Icons.person, color: Colors.blue[800], size: 20),
                         const SizedBox(width: 10),
                         const Text('Profile'),
-                      ],
-                    ),
-                  ),
-                  PopupMenuItem<String>(
-                    value: 'settings',
-                    child: Row(
-                      children: [
-                        Icon(Icons.settings, color: Colors.grey[700], size: 20),
-                        const SizedBox(width: 10),
-                        const Text('Settings'),
                       ],
                     ),
                   ),
@@ -185,29 +171,7 @@ class _HomeAdminPageState extends State<HomeAdminPage> {
                 child: CircularProgressIndicator(color: Colors.blue[700]),
               )
               : _buildBody(),
-      floatingActionButton:
-          _selectedIndex == 0
-              ? FloatingActionButton(
-                backgroundColor: Colors.blue[700],
-                child: const Icon(Icons.person_add),
-                onPressed: () {
-                  // Show create account dialog with refresh callback
-                  showCreateAccountDialog(
-                    context,
-                    onAccountCreated: () {
-                      // Force a notification to all listeners that the database has changed
-                      // This will cause the AccountsPage to rebuild with Provider
-                      _databaseService.notifyListeners();
-
-                      // Alternatively, try to trigger the RefreshIndicator if it's available
-                      if (_accountsRefreshKey.currentState != null) {
-                        _accountsRefreshKey.currentState!.show();
-                      }
-                    },
-                  );
-                },
-              )
-              : null,
+      floatingActionButton: _buildFloatingActionButton(),
     );
   }
 
@@ -222,6 +186,38 @@ class _HomeAdminPageState extends State<HomeAdminPage> {
         return const LogsPage();
       default:
         return AccountsPage();
+    }
+  }
+
+  Widget? _buildFloatingActionButton() {
+    // Show FAB only on accounts and budgets pages
+    if (_selectedIndex == 0) {
+      // Accounts Page FAB
+      return FloatingActionButton(
+        backgroundColor: Colors.blue[700],
+        child: const Icon(Icons.person_add),
+        onPressed: () {
+          // Show create account dialog with refresh callback
+          showCreateAccountDialog(
+            context,
+            onAccountCreated: () {
+              // Force a notification to all listeners that the database has changed
+              _databaseService.notifyListeners();
+
+              // Try to trigger the RefreshIndicator if it's available
+              if (_accountsRefreshKey.currentState != null) {
+                _accountsRefreshKey.currentState!.show();
+              }
+            },
+          );
+        },
+      );
+    } else if (_selectedIndex == 1) {
+      // Keep the budget page's own FAB
+      return null;
+    } else {
+      // No FAB for other pages
+      return null;
     }
   }
 }

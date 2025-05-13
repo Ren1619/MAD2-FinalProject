@@ -1,5 +1,3 @@
-// lib/services/database_helper.dart
-
 import 'dart:async';
 import 'dart:io';
 import 'package:path/path.dart';

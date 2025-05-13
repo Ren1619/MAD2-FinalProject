@@ -1,5 +1,4 @@
 import 'package:flutter/foundation.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import '../utils/uuid_generator.dart';
 import 'database_helper.dart';
 import 'auth_service.dart';
@@ -21,14 +20,10 @@ class DatabaseService extends ChangeNotifier {
 
   Future<bool> createBudget(Map<String, dynamic> budgetData) async {
     try {
-      // Get current user (simplified for demo)
+      // Get current user
       Map<String, dynamic>? currentUser = await _authService.currentUser;
       if (currentUser == null) {
-        currentUser = {
-          'id': 'demo-user-id',
-          'email': 'admin@example.com',
-          'name': 'Admin User',
-        };
+        return false; // Cannot create budget without a user
       }
 
       // Add additional budget data
@@ -165,7 +160,7 @@ class DatabaseService extends ChangeNotifier {
     }
   }
 
-  // Simplified user create method without authentication
+  // User create method
   Future<bool> createUser(Map<String, dynamic> userData) async {
     try {
       // Check if user with this email already exists
@@ -252,9 +247,10 @@ class DatabaseService extends ChangeNotifier {
     try {
       // Get current user information for the log
       Map<String, dynamic>? currentUser = await _authService.currentUser;
+      String userName = 'System';
 
-      if (currentUser == null) {
-        currentUser = {'name': 'Admin User', 'email': 'admin@example.com'};
+      if (currentUser != null) {
+        userName = currentUser['name'];
       }
 
       await _dbHelper.insertLog({
@@ -262,7 +258,7 @@ class DatabaseService extends ChangeNotifier {
         'description': description,
         'timestamp': DateTime.now().toIso8601String(),
         'type': type,
-        'user': currentUser['name'],
+        'user': userName,
         'ip': '127.0.0.1',
       });
 

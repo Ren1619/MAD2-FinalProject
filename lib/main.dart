@@ -4,8 +4,8 @@ import 'login_page.dart';
 import 'otp_verification_page.dart';
 import 'home_admin.dart';
 import 'services/database_helper.dart';
-import 'utils/debug_data.dart';
 import 'services/database_service.dart';
+import 'services/auth_service.dart';
 
 void main() async {
   // Ensure Flutter is initialized
@@ -14,8 +14,11 @@ void main() async {
   // Initialize database
   await DatabaseHelper().database;
 
-  // Populate debug data
-  await DebugData.populateDebugData();
+  // Create auth service
+  final AuthService authService = AuthService();
+
+  // Create initial admin user if database is empty
+  await authService.createInitialAdminIfNeeded();
 
   runApp(
     // Provide DatabaseService at the root level
@@ -49,14 +52,12 @@ class MyApp extends StatelessWidget {
           ),
         ),
       ),
-      // Set the initial route directly to home to bypass login
-      initialRoute: '/home',
+      // Set the initial route to login to require authentication
+      initialRoute: '/login',
       routes: {
         '/login': (context) => const LoginPage(),
         '/home': (context) => const HomeAdminPage(),
       },
-      // Add additional fallback to ensure we go to home screen
-      home: const HomeAdminPage(),
     );
   }
 }
