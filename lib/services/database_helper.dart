@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:path/path.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:sqflite/sqflite.dart';
+import '../utils/uuid_generator.dart';
 
 class DatabaseHelper {
   static final DatabaseHelper _instance = DatabaseHelper._internal();
@@ -20,7 +21,9 @@ class DatabaseHelper {
   Future<Database> _initDatabase() async {
     Directory documentsDirectory = await getApplicationDocumentsDirectory();
     String path = join(documentsDirectory.path, 'moneyger.db');
-    return await openDatabase(path, version: 1, onCreate: _createDb);
+
+    var db = await openDatabase(path, version: 1, onCreate: _createDb);
+    return db;
   }
 
   Future<void> _createDb(Database db, int version) async {
