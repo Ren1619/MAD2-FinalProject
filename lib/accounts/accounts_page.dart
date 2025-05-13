@@ -17,6 +17,7 @@ class AccountsPageState extends State<AccountsPage> {
   List<Map<String, dynamic>> _accounts = [];
   String _searchQuery = '';
   String _filterType = "All";
+  final TextEditingController _searchController = TextEditingController();
 
   // Add refresh indicator key
   final GlobalKey<RefreshIndicatorState> _refreshIndicatorKey =
@@ -25,7 +26,13 @@ class AccountsPageState extends State<AccountsPage> {
   @override
   void initState() {
     super.initState();
-    // fetchAccounts will be called in didChangeDependencies
+    _searchController.addListener(_onSearchChanged);
+  }
+
+  void _onSearchChanged() {
+    setState(() {
+      _searchQuery = _searchController.text;
+    });
   }
 
   @override
@@ -36,8 +43,18 @@ class AccountsPageState extends State<AccountsPage> {
     _fetchAccounts();
   }
 
+  @override
+  void dispose() {
+    // Properly dispose of the controller to prevent memory leaks
+    _searchController.removeListener(_onSearchChanged);
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  late List<Map<String, dynamic>> _filteredAccounts = _getFilteredAccounts();
+
   // Filter accounts based on search query
-  List<Map<String, dynamic>> get _filteredAccounts {
+  List<Map<String, dynamic>> _getFilteredAccounts() {
     if (_searchQuery.isEmpty && _filterType == "All") {
       return _accounts;
     }
@@ -74,6 +91,43 @@ class AccountsPageState extends State<AccountsPage> {
 
       return matchesSearch && matchesFilter;
     }).toList();
+  }
+
+  // Fetch accounts with current filter
+  Future<void> _fetchAccounts() async {
+    setState(() {
+      _isLoading = true;
+    });
+
+    try {
+      _accounts = await _databaseService.fetchUsers();
+      // Update filtered accounts when accounts list changes
+      setState(() {
+        _filteredAccounts = _getFilteredAccounts();
+        _isLoading = false;
+      });
+    } catch (e) {
+      print('Error fetching accounts: $e');
+      // Still update state to not freeze the UI
+      setState(() {
+        _isLoading = false;
+      });
+
+      // Show error message to the user
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error loading accounts: ${e.toString()}')),
+        );
+      }
+    }
+  }
+
+  // Update filter type and refresh filtered accounts
+  void _updateFilterType(String filterType) {
+    setState(() {
+      _filterType = filterType;
+      _filteredAccounts = _getFilteredAccounts();
+    });
   }
 
   // Handle user status change
@@ -302,25 +356,6 @@ class AccountsPageState extends State<AccountsPage> {
         });
       },
     );
-  }
-
-  // Fetch accounts with current filter
-  Future<void> _fetchAccounts() async {
-    setState(() {
-      _isLoading = true;
-    });
-
-    try {
-      _accounts = await _databaseService.fetchUsers();
-    } catch (e) {
-      print('Error fetching accounts: $e');
-    } finally {
-      if (mounted) {
-        setState(() {
-          _isLoading = false;
-        });
-      }
-    }
   }
 
   // Mobile account card - simplified for small screens

@@ -30,6 +30,7 @@ class _HomeAdminPageState extends State<HomeAdminPage> {
     'Manage Accounts',
     'Manage Budgets',
     'Activity Logs',
+    'Analytics',
   ];
 
   // Reference to the accounts page - we'll use a global key
@@ -190,21 +191,17 @@ class _HomeAdminPageState extends State<HomeAdminPage> {
   }
 
   Widget? _buildFloatingActionButton() {
-    // Show FAB only on accounts and budgets pages
-    if (_selectedIndex == 0) {
+    // Show FAB on both dashboard and accounts pages (indices 0 and 1)
+    if (_selectedIndex == 0 || _selectedIndex == 1) {
       // Accounts Page FAB
       return FloatingActionButton(
         backgroundColor: Colors.blue[700],
         child: const Icon(Icons.person_add),
         onPressed: () {
-          // Show create account dialog with refresh callback
           showCreateAccountDialog(
             context,
             onAccountCreated: () {
-              // Force a notification to all listeners that the database has changed
               _databaseService.notifyListeners();
-
-              // Try to trigger the RefreshIndicator if it's available
               if (_accountsRefreshKey.currentState != null) {
                 _accountsRefreshKey.currentState!.show();
               }
@@ -212,8 +209,8 @@ class _HomeAdminPageState extends State<HomeAdminPage> {
           );
         },
       );
-    } else if (_selectedIndex == 1) {
-      // Keep the budget page's own FAB
+    } else if (_selectedIndex == 2) {
+      // Budget page's own FAB is handled by that page
       return null;
     } else {
       // No FAB for other pages

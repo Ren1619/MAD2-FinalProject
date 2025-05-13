@@ -24,175 +24,193 @@ class SidebarNavigation extends StatelessWidget {
         color: Colors.white,
         child: Column(
           children: [
-            // Header with gradient background
-            Container(
-              padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 16),
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  colors: [AppTheme.primaryColor, AppTheme.primaryDarkColor],
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
+            _buildHeader(),
+            Expanded(child: _buildMenuItems(context)),
+            _buildLogoutButton(context),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildHeader() {
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 16),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [AppTheme.primaryColor, AppTheme.primaryDarkColor],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+      ),
+      child: SafeArea(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // App title and version
+            Row(
+              children: [
+                CircleAvatar(
+                  radius: 30,
+                  backgroundColor: Colors.white.withOpacity(0.9),
+                  child: Icon(
+                    Icons.admin_panel_settings,
+                    size: 30,
+                    color: AppTheme.primaryColor,
+                  ),
                 ),
-              ),
-              child: SafeArea(
-                child: Column(
+                const SizedBox(width: 16),
+                Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Row(
-                      children: [
-                        CircleAvatar(
-                          radius: 30,
-                          backgroundColor: Colors.white.withOpacity(0.9),
-                          child: Icon(
-                            Icons.admin_panel_settings,
-                            size: 30,
-                            color: AppTheme.primaryColor,
-                          ),
-                        ),
-                        const SizedBox(width: 16),
-                        Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            const Text(
-                              'Admin Panel',
-                              style: TextStyle(
-                                color: Colors.white,
-                                fontSize: 20,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                            const SizedBox(height: 4),
-                            Text(
-                              'v1.0.0',
-                              style: TextStyle(
-                                color: Colors.blue[100],
-                                fontSize: 12,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ],
+                    const Text(
+                      'Admin Panel',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 20,
+                        fontWeight: FontWeight.bold,
+                      ),
                     ),
-                    const SizedBox(height: 16),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 12,
-                        vertical: 8,
-                      ),
-                      decoration: BoxDecoration(
-                        color: Colors.white.withOpacity(0.2),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Row(
-                        children: [
-                          Icon(Icons.person, size: 16, color: Colors.blue[100]),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  userName ?? 'Admin User',
-                                  style: const TextStyle(
-                                    color: Colors.white,
-                                    fontSize: 14,
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                                Text(
-                                  userEmail ?? 'admin@example.com',
-                                  style: TextStyle(
-                                    color: Colors.blue[100],
-                                    fontSize: 12,
-                                  ),
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                              ],
-                            ),
-                          ),
-                        ],
-                      ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'v1.0.0',
+                      style: TextStyle(color: Colors.blue[100], fontSize: 12),
                     ),
                   ],
                 ),
-              ),
+              ],
             ),
-
-            // Menu items with sections
-            Expanded(
-              child: ListView(
-                padding: EdgeInsets.zero,
+            const SizedBox(height: 16),
+            // User profile info
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              decoration: BoxDecoration(
+                color: Colors.white.withOpacity(0.2),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Row(
                 children: [
-                  _buildMenuSection('Main'),
-                  _buildDrawerItem(
-                    context: context,
-                    icon: Icons.dashboard,
-                    title: 'Dashboard',
-                    index: 0,
-                  ),
-                  _buildDrawerItem(
-                    context: context,
-                    icon: Icons.manage_accounts,
-                    title: 'Accounts',
-                    index: 1,
-                  ),
-                  _buildDrawerItem(
-                    context: context,
-                    icon: Icons.account_balance_wallet,
-                    title: 'Budgets',
-                    index: 2,
-                  ),
-                  _buildMenuSection('Monitoring'),
-                  _buildDrawerItem(
-                    context: context,
-                    icon: Icons.history,
-                    title: 'Logs',
-                    index: 3,
-                  ),
-                  _buildDrawerItem(
-                    context: context,
-                    icon: Icons.bar_chart,
-                    title: 'Analytics',
-                    index: 4,
-                    badge: '2',
-                  ),
-                  _buildMenuSection('Settings'),
-                  _buildDrawerItem(
-                    context: context,
-                    icon: Icons.settings,
-                    title: 'Settings',
-                    index: -1,
-                    onTap: () {
-                      Navigator.pop(context);
-                      _showSettingsDialog(context);
-                    },
-                  ),
-                  _buildDrawerItem(
-                    context: context,
-                    icon: Icons.help_outline,
-                    title: 'Help & Support',
-                    index: -1,
-                    onTap: () {
-                      Navigator.pop(context);
-                      _showHelpDialog(context);
-                    },
+                  Icon(Icons.person, size: 16, color: Colors.blue[100]),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          userName ?? 'Admin User',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 14,
+                            fontWeight: FontWeight.bold,
+                          ),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        Text(
+                          userEmail ?? 'admin@example.com',
+                          style: TextStyle(
+                            color: Colors.blue[100],
+                            fontSize: 12,
+                          ),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ],
+                    ),
                   ),
                 ],
               ),
             ),
-
-            // Logout button at bottom
-            Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                border: Border(top: BorderSide(color: Colors.grey[200]!)),
-              ),
-              child: _buildLogoutButton(context),
-            ),
           ],
         ),
       ),
+    );
+  }
+
+  // Optimized menu items list using ListView.builder
+  Widget _buildMenuItems(BuildContext context) {
+    // Define menu data
+    final List<Map<String, dynamic>> menuSections = [
+      {
+        'title': 'Main',
+        'items': [
+          {'icon': Icons.manage_accounts, 'title': 'Accounts', 'index': 0},
+          {
+            'icon': Icons.account_balance_wallet,
+            'title': 'Budgets',
+            'index': 1,
+          },
+        ],
+      },
+      {
+        'title': 'Monitoring',
+        'items': [
+          {'icon': Icons.history, 'title': 'Logs', 'index': 2},
+          {
+            'icon': Icons.bar_chart,
+            'title': 'Analytics',
+            'index': 3,
+            'badge': '2',
+          },
+        ],
+      },
+      {
+        'title': 'Settings',
+        'items': [
+          {
+            'icon': Icons.settings,
+            'title': 'Settings',
+            'index': -1,
+            'action': 'settings',
+          },
+          {
+            'icon': Icons.help_outline,
+            'title': 'Help & Support',
+            'index': -1,
+            'action': 'help',
+          },
+        ],
+      },
+    ];
+
+    return ListView.builder(
+      padding: EdgeInsets.zero,
+      itemCount:
+          menuSections.length * 2 - 1, // Account for sections and their items
+      itemBuilder: (context, index) {
+        // For even indices, build a section header
+        if (index % 2 == 0) {
+          final sectionIndex = index ~/ 2;
+          return _buildMenuSection(menuSections[sectionIndex]['title']);
+        }
+
+        // For odd indices, build the section items
+        final sectionIndex = index ~/ 2;
+        final items = menuSections[sectionIndex]['items'] as List;
+
+        return Column(
+          children:
+              items.map<Widget>((item) {
+                return _buildDrawerItem(
+                  context: context,
+                  icon: item['icon'],
+                  title: item['title'],
+                  index: item['index'],
+                  badge: item['badge'],
+                  onTap:
+                      item['action'] == 'settings'
+                          ? () {
+                            Navigator.pop(context);
+                            _showSettingsDialog(context);
+                          }
+                          : item['action'] == 'help'
+                          ? () {
+                            Navigator.pop(context);
+                            _showHelpDialog(context);
+                          }
+                          : null,
+                );
+              }).toList(),
+        );
+      },
     );
   }
 

@@ -20,6 +20,18 @@ class _BudgetDetailsPageState extends State<BudgetDetailsPage> {
   bool _isLoading = false;
   String _activeTab = "Details";
 
+  // Cache calculated metrics to avoid recomputation on each build
+  late Map<String, dynamic> _budgetMetrics;
+  late Map<String, double> _expenseCategories;
+
+  @override
+  void initState() {
+    super.initState();
+    // Calculate metrics once on init
+    _budgetMetrics = _calculateBudgetMetrics();
+    _expenseCategories = _calculateExpenseCategories();
+  }
+
   // Format currency
   String _formatCurrency(double amount) {
     return '\$${amount.toStringAsFixed(2)}';
@@ -106,7 +118,7 @@ class _BudgetDetailsPageState extends State<BudgetDetailsPage> {
   }
 
   // Calculate budget metrics
-  Map<String, dynamic> get _budgetMetrics {
+  Map<String, dynamic> _calculateBudgetMetrics() {
     double totalSpent = 0;
     double totalBudget = widget.budget['budget'];
 
@@ -129,7 +141,7 @@ class _BudgetDetailsPageState extends State<BudgetDetailsPage> {
   }
 
   // Get expense categories for charts
-  Map<String, double> get _expenseCategories {
+  Map<String, double> _calculateExpenseCategories() {
     Map<String, double> categories = {};
 
     for (var expense in _expenses) {
@@ -341,6 +353,13 @@ class _BudgetDetailsPageState extends State<BudgetDetailsPage> {
         ),
       ],
     );
+  }
+
+  void _updateMetrics() {
+    setState(() {
+      _budgetMetrics = _calculateBudgetMetrics();
+      _expenseCategories = _calculateExpenseCategories();
+    });
   }
 
   Widget _buildDesktopLayout(Map<String, dynamic> metrics) {

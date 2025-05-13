@@ -18,7 +18,16 @@ class DatabaseService extends ChangeNotifier {
     }
   }
 
+  // Improved implementation of createBudget method in DatabaseService
+
   Future<bool> createBudget(Map<String, dynamic> budgetData) async {
+    if (budgetData['name'] == null ||
+        budgetData['budget'] == null ||
+        budgetData['description'] == null) {
+      print('Error: Missing required budget fields');
+      return false;
+    }
+
     try {
       // Get current user
       Map<String, dynamic>? currentUser = await _authService.currentUser;
@@ -37,11 +46,23 @@ class DatabaseService extends ChangeNotifier {
         'submittedByEmail': currentUser['email'],
       };
 
+      // Validate budget amount is a proper number
+      double? budgetAmount;
+      if (newBudget['budget'] is String) {
+        budgetAmount = double.tryParse(newBudget['budget']);
+        if (budgetAmount == null) return false;
+        newBudget['budget'] = budgetAmount;
+      } else if (newBudget['budget'] is int) {
+        newBudget['budget'] = (newBudget['budget'] as int).toDouble();
+      } else if (newBudget['budget'] is! double) {
+        return false;
+      }
+
       await _dbHelper.insertBudget(newBudget);
 
       // Log activity
       await logActivity(
-        'New budget submitted: ${budgetData['name']}',
+        'New budget submitted: ${budgetData['name']} - ${_formatCurrency(newBudget['budget'])}',
         'Budget',
       );
 
@@ -53,6 +74,21 @@ class DatabaseService extends ChangeNotifier {
       print('Error creating budget: $e');
       return false;
     }
+  }
+
+  String _formatCurrency(dynamic amount) {
+    if (amount == null) return '\$0.00';
+    double numAmount;
+    if (amount is double) {
+      numAmount = amount;
+    } else if (amount is int) {
+      numAmount = amount.toDouble();
+    } else if (amount is String) {
+      numAmount = double.tryParse(amount) ?? 0.0;
+    } else {
+      numAmount = 0.0;
+    }
+    return '\$${numAmount.toStringAsFixed(2)}';
   }
 
   Future<List<Map<String, dynamic>>> getFilteredUsers(String filterType) async {
