@@ -397,6 +397,44 @@ class DatabaseHelper {
     return await db.delete('users', where: 'id = ?', whereArgs: [id]);
   }
 
+  // Get users by role and company
+  Future<List<Map<String, dynamic>>> getUsersByRoleAndCompany(
+    String role,
+    String companyId,
+  ) async {
+    Database db = await database;
+    return await db.query(
+      'users',
+      where: 'role = ? AND companyId = ?',
+      whereArgs: [role, companyId],
+      orderBy: 'name ASC',
+    );
+  }
+
+  // Get users by role
+  Future<List<Map<String, dynamic>>> getUsersByRole(
+    String role, {
+    String? companyId,
+  }) async {
+    Database db = await database;
+
+    if (companyId != null) {
+      return await db.query(
+        'users',
+        where: 'role = ? AND companyId = ?',
+        whereArgs: [role, companyId],
+        orderBy: 'name ASC',
+      );
+    }
+
+    return await db.query(
+      'users',
+      where: 'role = ?',
+      whereArgs: [role],
+      orderBy: 'name ASC',
+    );
+  }
+
   // Budgets Operations with company support
   Future<List<Map<String, dynamic>>> getBudgets({
     int limit = 20,
@@ -693,30 +731,6 @@ class DatabaseHelper {
   Future<int> insertLog(Map<String, dynamic> log) async {
     Database db = await database;
     return await db.insert('logs', log);
-  }
-
-  // Get users by role
-  Future<List<Map<String, dynamic>>> getUsersByRole(
-    String role, {
-    String? companyId,
-  }) async {
-    Database db = await database;
-
-    if (companyId != null) {
-      return await db.query(
-        'users',
-        where: 'role = ? AND companyId = ?',
-        whereArgs: [role, companyId],
-        orderBy: 'name ASC',
-      );
-    }
-
-    return await db.query(
-      'users',
-      where: 'role = ?',
-      whereArgs: [role],
-      orderBy: 'name ASC',
-    );
   }
 
   // Get users by status

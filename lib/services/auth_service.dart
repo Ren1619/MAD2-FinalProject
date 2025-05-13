@@ -6,20 +6,52 @@ import 'database_helper.dart';
 class AuthService {
   final DatabaseHelper _dbHelper = DatabaseHelper();
 
+  // Role constants
+  static const String ROLE_COMPANY_ADMIN = 'Company Admin';
+  static const String ROLE_BUDGET_MANAGER = 'Budget Manager';
+  static const String ROLE_FINANCIAL_MANAGER =
+      'Financial Planning and Analysis Manager';
+  static const String ROLE_SPENDER = 'Authorized Spender';
+
+  // List of available non-admin roles
+  static List<String> getNonAdminRoles() {
+    return [ROLE_BUDGET_MANAGER, ROLE_FINANCIAL_MANAGER, ROLE_SPENDER];
+  }
+
   // Create an initial admin user if needed
   Future<void> createInitialAdminIfNeeded() async {
     final List<Map<String, dynamic>> existingUsers = await _dbHelper.getUsers();
 
     if (existingUsers.isEmpty) {
-      // Create a default admin user
+      // Create a default company first
+      String companyId = UuidGenerator.generateUuid();
+      await _dbHelper.insertCompany({
+        'id': companyId,
+        'name': 'Default Company',
+        'email': 'admin@example.com',
+        'phone': '+1 (555) 123-4567',
+        'address': '123 Main Street',
+        'city': 'San Francisco',
+        'state': 'CA',
+        'zipcode': '94105',
+        'website': 'www.defaultcompany.com',
+        'size': '1-10 employees',
+        'industry': 'Information Technology',
+        'createdAt': DateTime.now().toIso8601String(),
+      });
+
+      // Create a default admin user as Company Admin
       String adminId = UuidGenerator.generateUuid();
       await _dbHelper.insertUser({
         'id': adminId,
         'name': 'Admin User',
         'email': 'admin@example.com',
-        'role': 'Budget Manager',
+        'role': ROLE_COMPANY_ADMIN,
         'status': 'Active',
         'createdAt': DateTime.now().toIso8601String(),
+        'companyId': companyId,
+        'phone': '+1 (555) 123-4567',
+        'enableNotifications': 1,
       });
 
       // Log admin creation
@@ -30,6 +62,7 @@ class AuthService {
         'type': 'System',
         'user': 'System',
         'ip': '127.0.0.1',
+        'companyId': companyId,
       });
     }
   }
@@ -71,13 +104,12 @@ class AuthService {
     }
   }
 
-  // Register a new company and admin user
-  Future<bool> registerCompanyAndAdmin({
+  // Register a new company with admin user
+  Future<bool> registerCompanyWithAdmin({
     required Company company,
     required String adminName,
     required String adminEmail,
     required String adminPassword,
-    required String adminRole,
     String? adminPhone,
     bool enableNotifications = true,
   }) async {
@@ -100,17 +132,19 @@ class AuthService {
         return false; // Company email already exists
       }
 
-      // Insert company first
+      // Convert Company object to Map
       Map<String, dynamic> companyMap = company.toMap();
+
+      // Insert company first
       String companyId = await _dbHelper.insertCompany(companyMap);
 
-      // Create admin user
+      // Create admin user - always with Company Admin role
       String adminId = UuidGenerator.generateUuid();
       Map<String, dynamic> adminUser = {
         'id': adminId,
         'name': adminName,
         'email': adminEmail,
-        'role': adminRole,
+        'role': ROLE_COMPANY_ADMIN, // Fixed role for company registrant
         'status': 'Active',
         'createdAt': DateTime.now().toIso8601String(),
         'companyId': companyId,
@@ -139,13 +173,16 @@ class AuthService {
     }
   }
 
-  // Create a new user account
-  Future<bool> createAccount(
-    String email,
-    String password,
-    String name,
-    String role,
-  ) async {
+  // Create a new user account (by admin)
+  Future<bool> createUserAccount({
+    required String name,
+    required String email,
+    required String password,
+    required String role,
+    String? phone,
+    required String companyId,
+    bool enableNotifications = true,
+  }) async {
     try {
       // Check if user with this email already exists
       Map<String, dynamic>? existingUser = await _dbHelper.getUserByEmail(
@@ -154,6 +191,17 @@ class AuthService {
 
       if (existingUser != null) {
         return false; // User already exists
+      }
+
+      // Validate the role is not Company Admin (only one per company)
+      if (role == ROLE_COMPANY_ADMIN) {
+        // Check if company already has an admin
+        List<Map<String, dynamic>> companyAdmins = await _dbHelper
+            .getUsersByRoleAndCompany(ROLE_COMPANY_ADMIN, companyId);
+
+        if (companyAdmins.isNotEmpty) {
+          return false; // Company already has an admin
+        }
       }
 
       // Create new user
@@ -165,23 +213,31 @@ class AuthService {
         'role': role,
         'status': 'Active',
         'createdAt': DateTime.now().toIso8601String(),
+        'companyId': companyId,
+        'phone': phone ?? '',
+        'enableNotifications': enableNotifications ? 1 : 0,
       };
 
       await _dbHelper.insertUser(newUser);
 
+      // Get the admin user for logging
+      Map<String, dynamic>? currentUser = await this.currentUser;
+      String createdBy = currentUser != null ? currentUser['name'] : 'System';
+
       // Log activity
       await _dbHelper.insertLog({
         'id': UuidGenerator.generateUuid(),
-        'description': 'New account created: $email',
+        'description': 'New account created: $email with role: $role',
         'timestamp': DateTime.now().toIso8601String(),
         'type': 'Account Management',
-        'user': 'System',
+        'user': createdBy,
         'ip': '127.0.0.1',
+        'companyId': companyId,
       });
 
       return true;
     } catch (e) {
-      print('Error creating account: $e');
+      print('Error creating user account: $e');
       return false;
     }
   }

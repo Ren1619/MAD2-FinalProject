@@ -50,12 +50,14 @@ class Expense {
     return Expense(
       id: map['id'] ?? '',
       description: map['description'] ?? '',
-      amount: map['amount'] is int
-          ? (map['amount'] as int).toDouble()
-          : (map['amount'] as num?)?.toDouble() ?? 0.0,
-      date: map['date'] is String 
-          ? DateTime.parse(map['date']) 
-          : (map['date'] as DateTime? ?? DateTime.now()),
+      amount:
+          map['amount'] is int
+              ? (map['amount'] as int).toDouble()
+              : (map['amount'] as num?)?.toDouble() ?? 0.0,
+      date:
+          map['date'] is String
+              ? DateTime.parse(map['date'])
+              : (map['date'] as DateTime? ?? DateTime.now()),
       category: map['category'] ?? '',
       approvedBy: map['approvedBy'],
       receipt: map['receipt'] == 1,

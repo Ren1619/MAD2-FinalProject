@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import '../services/database_service.dart';
 import '../widgets/common_widgets.dart';
 import './create_account_dialog.dart';
+import '../services/auth_service.dart';
 
 class AccountsPage extends StatefulWidget {
   const AccountsPage({Key? key}) : super(key: key);
@@ -18,6 +19,8 @@ class AccountsPageState extends State<AccountsPage> {
   String _searchQuery = '';
   String _filterType = "All";
   final TextEditingController _searchController = TextEditingController();
+  final _auth = AuthService();
+  String _selectedRole = AuthService.ROLE_SPENDER; // Default role
 
   // Add refresh indicator key
   final GlobalKey<RefreshIndicatorState> _refreshIndicatorKey =
@@ -79,13 +82,14 @@ class AccountsPageState extends State<AccountsPage> {
       if (_filterType != "All") {
         if (_filterType == "Active" || _filterType == "Inactive") {
           matchesFilter = account['status'] == _filterType;
+        } else if (_filterType == "admin") {
+          matchesFilter = account['role'] == AuthService.ROLE_COMPANY_ADMIN;
         } else if (_filterType == "budget_manager") {
-          matchesFilter = account['role'] == "Budget Manager";
+          matchesFilter = account['role'] == AuthService.ROLE_BUDGET_MANAGER;
         } else if (_filterType == "fp_manager") {
-          matchesFilter =
-              account['role'] == "Financial Planning and Analysis Manager";
+          matchesFilter = account['role'] == AuthService.ROLE_FINANCIAL_MANAGER;
         } else if (_filterType == "spender") {
-          matchesFilter = account['role'] == "Authorized Spender";
+          matchesFilter = account['role'] == AuthService.ROLE_SPENDER;
         }
       }
 
@@ -335,6 +339,7 @@ class AccountsPageState extends State<AccountsPage> {
       itemBuilder:
           (context) => [
             const PopupMenuItem(value: 'All', child: Text('All Accounts')),
+            const PopupMenuItem(value: 'admin', child: Text('Company Admins')),
             const PopupMenuItem(
               value: 'budget_manager',
               child: Text('Budget Managers'),
@@ -595,18 +600,23 @@ class AccountsPageState extends State<AccountsPage> {
   // Common menu items for all layouts
   List<PopupMenuItem> _buildMenuItems(Map<String, dynamic> account) {
     final String status = account['status'] ?? 'Inactive';
+    final String role = account['role'] ?? '';
+
+    // Don't allow editing or deleting Company Admin accounts
+    final bool isAdmin = role == AuthService.ROLE_COMPANY_ADMIN;
 
     return [
-      const PopupMenuItem(
-        value: 'edit',
-        child: Row(
-          children: [
-            Icon(Icons.edit, size: 18),
-            SizedBox(width: 8),
-            Text('Edit'),
-          ],
+      if (!isAdmin)
+        const PopupMenuItem(
+          value: 'edit',
+          child: Row(
+            children: [
+              Icon(Icons.edit, size: 18),
+              SizedBox(width: 8),
+              Text('Edit'),
+            ],
+          ),
         ),
-      ),
       const PopupMenuItem(
         value: 'reset',
         child: Row(
@@ -617,29 +627,31 @@ class AccountsPageState extends State<AccountsPage> {
           ],
         ),
       ),
-      PopupMenuItem(
-        value: status == 'Active' ? 'deactivate' : 'activate',
-        child: Row(
-          children: [
-            Icon(
-              status == 'Active' ? Icons.block : Icons.check_circle,
-              size: 18,
-            ),
-            const SizedBox(width: 8),
-            Text(status == 'Active' ? 'Deactivate' : 'Activate'),
-          ],
+      if (!isAdmin)
+        PopupMenuItem(
+          value: status == 'Active' ? 'deactivate' : 'activate',
+          child: Row(
+            children: [
+              Icon(
+                status == 'Active' ? Icons.block : Icons.check_circle,
+                size: 18,
+              ),
+              const SizedBox(width: 8),
+              Text(status == 'Active' ? 'Deactivate' : 'Activate'),
+            ],
+          ),
         ),
-      ),
-      const PopupMenuItem(
-        value: 'delete',
-        child: Row(
-          children: [
-            Icon(Icons.delete, size: 18, color: Colors.red),
-            SizedBox(width: 8),
-            Text('Delete', style: TextStyle(color: Colors.red)),
-          ],
+      if (!isAdmin)
+        const PopupMenuItem(
+          value: 'delete',
+          child: Row(
+            children: [
+              Icon(Icons.delete, size: 18, color: Colors.red),
+              SizedBox(width: 8),
+              Text('Delete', style: TextStyle(color: Colors.red)),
+            ],
+          ),
         ),
-      ),
     ];
   }
 

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../services/database_service.dart';
+import '../services/auth_service.dart';
 
 void showCreateAccountDialog(
   BuildContext context, {
@@ -10,9 +11,12 @@ void showCreateAccountDialog(
   final emailController = TextEditingController();
   final passwordController = TextEditingController();
   final confirmPasswordController = TextEditingController();
-  String selectedRole = 'Authorized Spender';
+  String selectedRole = AuthService.ROLE_SPENDER; // Default role
   bool obscurePassword = true;
   bool isLoading = false;
+
+  // Get the list of available non-admin roles
+  final List<String> availableRoles = AuthService.getNonAdminRoles();
 
   showDialog(
     context: context,
@@ -89,11 +93,7 @@ void showCreateAccountDialog(
                         ),
                         value: selectedRole,
                         items:
-                            [
-                                  'Budget Manager',
-                                  'Financial Planning and Analysis Manager',
-                                  'Authorized Spender',
-                                ]
+                            availableRoles
                                 .map(
                                   (role) => DropdownMenuItem(
                                     value: role,

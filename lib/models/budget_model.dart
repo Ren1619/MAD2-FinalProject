@@ -59,9 +59,10 @@ class Budget {
     return Budget(
       id: map['id'] ?? '',
       name: map['name'] ?? '',
-      budget: map['budget'] is int
-          ? (map['budget'] as int).toDouble()
-          : (map['budget'] as num?)?.toDouble() ?? 0.0,
+      budget:
+          map['budget'] is int
+              ? (map['budget'] as int).toDouble()
+              : (map['budget'] as num?)?.toDouble() ?? 0.0,
       description: map['description'] ?? '',
       status: map['status'] ?? '',
       dateSubmitted: map['dateSubmitted'] ?? '',

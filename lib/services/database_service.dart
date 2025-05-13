@@ -376,6 +376,14 @@ class DatabaseService extends ChangeNotifier {
   // User create method
   Future<bool> createUser(Map<String, dynamic> userData) async {
     try {
+      // Get current user for company ID and to check if they're an admin
+      Map<String, dynamic>? currentUser = await _authService.currentUser;
+      if (currentUser == null ||
+          currentUser['role'] != AuthService.ROLE_COMPANY_ADMIN ||
+          currentUser['companyId'] == null) {
+        return false; // Only company admins can create users
+      }
+
       // Check if user with this email already exists
       Map<String, dynamic>? existingUser = await _dbHelper.getUserByEmail(
         userData['email'],
@@ -385,7 +393,7 @@ class DatabaseService extends ChangeNotifier {
         return false; // User already exists
       }
 
-      // Create new user
+      // Create new user with current user's company ID
       String id = UuidGenerator.generateUuid();
       Map<String, dynamic> newUser = {
         'id': id,
@@ -394,19 +402,16 @@ class DatabaseService extends ChangeNotifier {
         'role': userData['role'],
         'status': 'Active',
         'createdAt': DateTime.now().toIso8601String(),
+        'companyId': currentUser['companyId'],
+        'phone': userData['phone'] ?? '',
+        'enableNotifications': userData['enableNotifications'] ?? 1,
       };
-
-      // Get current user for company ID
-      Map<String, dynamic>? currentUser = await _authService.currentUser;
-      if (currentUser != null && currentUser['companyId'] != null) {
-        newUser['companyId'] = currentUser['companyId'];
-      }
 
       await _dbHelper.insertUser(newUser);
 
       // Log activity
       await logActivity(
-        'New account created: ${userData['email']}',
+        'New account created: ${userData['email']} with role: ${userData['role']}',
         'Account Management',
       );
 

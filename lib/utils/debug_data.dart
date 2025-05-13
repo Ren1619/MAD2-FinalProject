@@ -1,5 +1,6 @@
 import '../services/database_helper.dart';
 import '../utils/uuid_generator.dart';
+import '../services/auth_service.dart';
 import 'package:intl/intl.dart';
 
 class DebugData {
@@ -31,23 +32,30 @@ class DebugData {
     });
 
     // Create test users with different roles
+    final String companyAdminId = await _createUser(
+      dbHelper,
+      AuthService.ROLE_COMPANY_ADMIN, // Company Admin role
+      'admin@acmecorp.com',
+      companyId,
+    );
+
     final String budgetManagerId = await _createUser(
       dbHelper,
-      'Budget Manager',
+      AuthService.ROLE_BUDGET_MANAGER,
       'budget@acmecorp.com',
       companyId,
     );
 
     final String financeManagerId = await _createUser(
       dbHelper,
-      'Financial Planning and Analysis Manager',
+      AuthService.ROLE_FINANCIAL_MANAGER,
       'finance@acmecorp.com',
       companyId,
     );
 
     final String spenderId = await _createUser(
       dbHelper,
-      'Authorized Spender',
+      AuthService.ROLE_SPENDER,
       'spender@acmecorp.com',
       companyId,
     );
@@ -55,7 +63,7 @@ class DebugData {
     // Inactive user
     await _createUser(
       dbHelper,
-      'Authorized Spender',
+      AuthService.ROLE_SPENDER,
       'inactive@acmecorp.com',
       companyId,
       'Inactive',
