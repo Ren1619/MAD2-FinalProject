@@ -213,10 +213,10 @@ class _BudgetsPageState extends State<BudgetsPage>
             ),
           ),
 
-          // Tab Bar
+          // Tab Bar - Made scrollable to prevent overflow on small screens
           TabBar(
             controller: _tabController,
-            isScrollable: true,
+            isScrollable: true, // Important for small screens
             onTap: (_) => setState(() {}),
             labelColor: Theme.of(context).primaryColor,
             unselectedLabelColor: Colors.grey[600],
@@ -341,8 +341,10 @@ class _BudgetsPageState extends State<BudgetsPage>
                           fontSize: 16,
                         ),
                         overflow: TextOverflow.ellipsis,
+                        maxLines: 1, // Prevent overflow
                       ),
                     ),
+                    const SizedBox(width: 8), // Ensure spacing
                     _buildStatusChip(budget['status'] ?? 'Pending'),
                   ],
                 ),
@@ -366,9 +368,12 @@ class _BudgetsPageState extends State<BudgetsPage>
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Text(
-                      'Submitted: ${_formatDate(budget['dateSubmitted'])}',
-                      style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+                    Expanded(
+                      child: Text(
+                        'Submitted: ${_formatDate(budget['dateSubmitted'])}',
+                        style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+                        overflow: TextOverflow.ellipsis,
+                      ),
                     ),
                     _buildActionButton(budget),
                   ],
@@ -397,7 +402,7 @@ class _BudgetsPageState extends State<BudgetsPage>
     }
   }
 
-  // Tablet layout - grid cards
+  // Tablet layout - grid cards with improved overflow protection
   Widget _buildTabletList(List<Map<String, dynamic>> budgets) {
     return GridView.builder(
       padding: const EdgeInsets.all(16),
@@ -431,8 +436,10 @@ class _BudgetsPageState extends State<BudgetsPage>
                           fontSize: 16,
                         ),
                         overflow: TextOverflow.ellipsis,
+                        maxLines: 1,
                       ),
                     ),
+                    const SizedBox(width: 8),
                     _buildStatusChip(budget['status'] ?? 'Pending'),
                   ],
                 ),
@@ -457,9 +464,12 @@ class _BudgetsPageState extends State<BudgetsPage>
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Text(
-                      'Submitted: ${_formatDate(budget['dateSubmitted'])}',
-                      style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+                    Expanded(
+                      child: Text(
+                        'Submitted: ${_formatDate(budget['dateSubmitted'])}',
+                        style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+                        overflow: TextOverflow.ellipsis,
+                      ),
                     ),
                     _buildActionButton(budget),
                   ],
@@ -472,94 +482,113 @@ class _BudgetsPageState extends State<BudgetsPage>
     );
   }
 
-  // Desktop layout - table
+  // Desktop layout - table with horizontal scrolling for smaller screens
   Widget _buildDesktopList(List<Map<String, dynamic>> budgets) {
     return SingleChildScrollView(
       padding: const EdgeInsets.all(16),
-      child: Card(
-        elevation: 2,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: DataTable(
-            columnSpacing: 16,
-            horizontalMargin: 12,
-            columns: const [
-              DataColumn(
-                label: Text(
-                  'Name',
-                  style: TextStyle(fontWeight: FontWeight.bold),
-                ),
-              ),
-              DataColumn(
-                label: Text(
-                  'Budget',
-                  style: TextStyle(fontWeight: FontWeight.bold),
-                ),
-              ),
-              DataColumn(
-                label: Text(
-                  'Description',
-                  style: TextStyle(fontWeight: FontWeight.bold),
-                ),
-              ),
-              DataColumn(
-                label: Text(
-                  'Status',
-                  style: TextStyle(fontWeight: FontWeight.bold),
-                ),
-              ),
-              DataColumn(
-                label: Text(
-                  'Date',
-                  style: TextStyle(fontWeight: FontWeight.bold),
-                ),
-              ),
-              DataColumn(
-                label: Text(
-                  'Actions',
-                  style: TextStyle(fontWeight: FontWeight.bold),
-                ),
-              ),
-            ],
-            rows:
-                budgets.map((budget) {
-                  return DataRow(
-                    cells: [
-                      DataCell(
-                        SizedBox(
-                          width: 150,
-                          child: Text(
-                            budget['name'] ?? 'Unnamed Budget',
-                            overflow: TextOverflow.ellipsis,
+      // Added horizontal scrolling to prevent overflow on smaller screens
+      scrollDirection: Axis.horizontal,
+      child: SingleChildScrollView(
+        child: Card(
+          elevation: 2,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: ConstrainedBox(
+            // Set a minimum width to ensure the table is usable
+            constraints: BoxConstraints(
+              minWidth: 600,
+              maxWidth:
+                  MediaQuery.of(context).size.width > 800
+                      ? MediaQuery.of(context).size.width - 64
+                      : 800,
+            ),
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: DataTable(
+                columnSpacing: 16,
+                horizontalMargin: 12,
+                columns: const [
+                  DataColumn(
+                    label: Text(
+                      'Name',
+                      style: TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                  ),
+                  DataColumn(
+                    label: Text(
+                      'Budget',
+                      style: TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                  ),
+                  DataColumn(
+                    label: Text(
+                      'Description',
+                      style: TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                  ),
+                  DataColumn(
+                    label: Text(
+                      'Status',
+                      style: TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                  ),
+                  DataColumn(
+                    label: Text(
+                      'Date',
+                      style: TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                  ),
+                  DataColumn(
+                    label: Text(
+                      'Actions',
+                      style: TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                  ),
+                ],
+                rows:
+                    budgets.map((budget) {
+                      return DataRow(
+                        cells: [
+                          DataCell(
+                            ConstrainedBox(
+                              constraints: const BoxConstraints(maxWidth: 150),
+                              child: Text(
+                                budget['name'] ?? 'Unnamed Budget',
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
                           ),
-                        ),
-                      ),
-                      DataCell(
-                        Text(
-                          _formatCurrency(budget['budget']),
-                          style: TextStyle(
-                            fontWeight: FontWeight.bold,
-                            color: Colors.blue[700],
+                          DataCell(
+                            Text(
+                              _formatCurrency(budget['budget']),
+                              style: TextStyle(
+                                fontWeight: FontWeight.bold,
+                                color: Colors.blue[700],
+                              ),
+                            ),
                           ),
-                        ),
-                      ),
-                      DataCell(
-                        SizedBox(
-                          width: 250,
-                          child: Text(
-                            budget['description'] ?? 'No description provided',
-                            overflow: TextOverflow.ellipsis,
-                            maxLines: 2,
+                          DataCell(
+                            ConstrainedBox(
+                              constraints: const BoxConstraints(maxWidth: 250),
+                              child: Text(
+                                budget['description'] ??
+                                    'No description provided',
+                                overflow: TextOverflow.ellipsis,
+                                maxLines: 2,
+                              ),
+                            ),
                           ),
-                        ),
-                      ),
-                      DataCell(_buildStatusChip(budget['status'] ?? 'Pending')),
-                      DataCell(Text(_formatDate(budget['dateSubmitted']))),
-                      DataCell(_buildActionButton(budget)),
-                    ],
-                  );
-                }).toList(),
+                          DataCell(
+                            _buildStatusChip(budget['status'] ?? 'Pending'),
+                          ),
+                          DataCell(Text(_formatDate(budget['dateSubmitted']))),
+                          DataCell(_buildActionButton(budget)),
+                        ],
+                      );
+                    }).toList(),
+              ),
+            ),
           ),
         ),
       ),
@@ -568,7 +597,7 @@ class _BudgetsPageState extends State<BudgetsPage>
 
   Widget _buildStatusChip(String status) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
         color: _getStatusColor(status).withOpacity(0.1),
         borderRadius: BorderRadius.circular(16),
@@ -633,147 +662,189 @@ class _BudgetsPageState extends State<BudgetsPage>
     final descriptionController = TextEditingController();
     bool isLoading = false;
 
+    // Use a responsive width based on screen size
+    final double dialogWidth =
+        MediaQuery.of(context).size.width > 600
+            ? 500
+            : MediaQuery.of(context).size.width * 0.9;
+
     showDialog(
       context: context,
       builder:
           (context) => StatefulBuilder(
             builder:
-                (context, setState) => AlertDialog(
-                  title: Text(
-                    'Create New Budget',
-                    style: TextStyle(
-                      color: Colors.blue[800],
-                      fontWeight: FontWeight.bold,
+                (context, setState) => Dialog(
+                  // Constrained size to prevent overflow
+                  child: ConstrainedBox(
+                    constraints: BoxConstraints(
+                      maxWidth: dialogWidth,
+                      maxHeight: MediaQuery.of(context).size.height * 0.8,
                     ),
-                  ),
-                  content: SingleChildScrollView(
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        TextField(
-                          controller: nameController,
-                          decoration: const InputDecoration(
-                            labelText: 'Budget Name',
-                            hintText: 'Enter budget name',
-                          ),
-                        ),
-                        const SizedBox(height: 16),
-                        TextField(
-                          controller: budgetController,
-                          keyboardType: TextInputType.number,
-                          decoration: const InputDecoration(
-                            labelText: 'Amount',
-                            hintText: 'Enter budget amount',
-                            prefixText: '\$ ',
-                          ),
-                        ),
-                        const SizedBox(height: 16),
-                        TextField(
-                          controller: descriptionController,
-                          maxLines: 3,
-                          decoration: const InputDecoration(
-                            labelText: 'Description',
-                            hintText: 'Enter budget description',
-                            alignLabelWithHint: true,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  actions: [
-                    TextButton(
-                      onPressed: () => Navigator.pop(context),
-                      child: Text(
-                        'Cancel',
-                        style: TextStyle(color: Colors.grey[700]),
-                      ),
-                    ),
-                    ElevatedButton(
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.blue[700],
-                      ),
-                      onPressed:
-                          isLoading
-                              ? null
-                              : () async {
-                                // Validate input fields
-                                if (nameController.text.isEmpty ||
-                                    budgetController.text.isEmpty ||
-                                    descriptionController.text.isEmpty) {
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    const SnackBar(
-                                      content: Text('Please fill all fields'),
-                                    ),
-                                  );
-                                  return;
-                                }
-
-                                // Parse budget amount
-                                double? budgetAmount = double.tryParse(
-                                  budgetController.text,
-                                );
-                                if (budgetAmount == null) {
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    const SnackBar(
-                                      content: Text(
-                                        'Please enter a valid amount',
-                                      ),
-                                    ),
-                                  );
-                                  return;
-                                }
-
-                                setState(() {
-                                  isLoading = true;
-                                });
-
-                                try {
-                                  // Create budget in SQLite
-                                  await _databaseService.createBudget({
-                                    'name': nameController.text,
-                                    'budget': budgetAmount,
-                                    'description': descriptionController.text,
-                                  });
-
-                                  Navigator.pop(context);
-
-                                  // Refresh budget list
-                                  _fetchBudgets();
-
-                                  // Show success message
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    const SnackBar(
-                                      content: Text(
-                                        'Budget submitted successfully',
-                                      ),
-                                    ),
-                                  );
-                                } catch (e) {
-                                  // Show error message
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    SnackBar(
-                                      content: Text('Error: ${e.toString()}'),
-                                    ),
-                                  );
-                                } finally {
-                                  setState(() {
-                                    isLoading = false;
-                                  });
-                                }
-                              },
-                      child:
-                          isLoading
-                              ? const SizedBox(
-                                width: 20,
-                                height: 20,
-                                child: CircularProgressIndicator(
-                                  color: Colors.white,
-                                  strokeWidth: 2.0,
+                    child: SingleChildScrollView(
+                      child: Padding(
+                        padding: const EdgeInsets.all(16.0),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Create New Budget',
+                              style: TextStyle(
+                                color: Colors.blue[800],
+                                fontWeight: FontWeight.bold,
+                                fontSize: 18,
+                              ),
+                            ),
+                            const SizedBox(height: 16),
+                            TextField(
+                              controller: nameController,
+                              decoration: const InputDecoration(
+                                labelText: 'Budget Name',
+                                hintText: 'Enter budget name',
+                              ),
+                            ),
+                            const SizedBox(height: 16),
+                            TextField(
+                              controller: budgetController,
+                              keyboardType: TextInputType.number,
+                              decoration: const InputDecoration(
+                                labelText: 'Amount',
+                                hintText: 'Enter budget amount',
+                                prefixText: '\$ ',
+                              ),
+                            ),
+                            const SizedBox(height: 16),
+                            TextField(
+                              controller: descriptionController,
+                              maxLines: 3,
+                              decoration: const InputDecoration(
+                                labelText: 'Description',
+                                hintText: 'Enter budget description',
+                                alignLabelWithHint: true,
+                              ),
+                            ),
+                            const SizedBox(height: 24),
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.end,
+                              children: [
+                                TextButton(
+                                  onPressed: () => Navigator.pop(context),
+                                  child: Text(
+                                    'Cancel',
+                                    style: TextStyle(color: Colors.grey[700]),
+                                  ),
                                 ),
-                              )
-                              : const Text('Submit'),
+                                const SizedBox(width: 8),
+                                ElevatedButton(
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: Colors.blue[700],
+                                  ),
+                                  onPressed:
+                                      isLoading
+                                          ? null
+                                          : () async {
+                                            // Validate input fields
+                                            if (nameController.text.isEmpty ||
+                                                budgetController.text.isEmpty ||
+                                                descriptionController
+                                                    .text
+                                                    .isEmpty) {
+                                              ScaffoldMessenger.of(
+                                                context,
+                                              ).showSnackBar(
+                                                const SnackBar(
+                                                  content: Text(
+                                                    'Please fill all fields',
+                                                  ),
+                                                ),
+                                              );
+                                              return;
+                                            }
+
+                                            // Parse budget amount
+                                            double? budgetAmount =
+                                                double.tryParse(
+                                                  budgetController.text,
+                                                );
+                                            if (budgetAmount == null) {
+                                              ScaffoldMessenger.of(
+                                                context,
+                                              ).showSnackBar(
+                                                const SnackBar(
+                                                  content: Text(
+                                                    'Please enter a valid amount',
+                                                  ),
+                                                ),
+                                              );
+                                              return;
+                                            }
+
+                                            setState(() {
+                                              isLoading = true;
+                                            });
+
+                                            try {
+                                              // Create budget in SQLite
+                                              await _databaseService
+                                                  .createBudget({
+                                                    'name': nameController.text,
+                                                    'budget': budgetAmount,
+                                                    'description':
+                                                        descriptionController
+                                                            .text,
+                                                  });
+
+                                              Navigator.pop(context);
+
+                                              // Refresh budget list
+                                              _fetchBudgets();
+
+                                              // Show success message
+                                              ScaffoldMessenger.of(
+                                                context,
+                                              ).showSnackBar(
+                                                const SnackBar(
+                                                  content: Text(
+                                                    'Budget submitted successfully',
+                                                  ),
+                                                ),
+                                              );
+                                            } catch (e) {
+                                              // Show error message
+                                              ScaffoldMessenger.of(
+                                                context,
+                                              ).showSnackBar(
+                                                SnackBar(
+                                                  content: Text(
+                                                    'Error: ${e.toString()}',
+                                                  ),
+                                                ),
+                                              );
+                                            } finally {
+                                              setState(() {
+                                                isLoading = false;
+                                              });
+                                            }
+                                          },
+                                  child:
+                                      isLoading
+                                          ? const SizedBox(
+                                            width: 20,
+                                            height: 20,
+                                            child: CircularProgressIndicator(
+                                              color: Colors.white,
+                                              strokeWidth: 2.0,
+                                            ),
+                                          )
+                                          : const Text('Submit'),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
                     ),
-                  ],
+                  ),
                 ),
           ),
     );
@@ -788,301 +859,350 @@ class _BudgetsPageState extends State<BudgetsPage>
     final String name = budget['name'] ?? 'Unnamed Budget';
     bool isLoading = false;
 
+    // Use a responsive width based on screen size
+    final double dialogWidth =
+        MediaQuery.of(context).size.width > 600
+            ? 500
+            : MediaQuery.of(context).size.width * 0.9;
+
     showDialog(
       context: context,
       builder:
           (context) => StatefulBuilder(
             builder:
-                (context, setState) => AlertDialog(
-                  title: Text(
-                    name,
-                    style: TextStyle(
-                      color: Colors.blue[800],
-                      fontWeight: FontWeight.bold,
+                (context, setState) => Dialog(
+                  // Constrained size to prevent overflow
+                  child: ConstrainedBox(
+                    constraints: BoxConstraints(
+                      maxWidth: dialogWidth,
+                      maxHeight: MediaQuery.of(context).size.height * 0.8,
                     ),
-                  ),
-                  content: SingleChildScrollView(
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
+                    child: SingleChildScrollView(
+                      child: Padding(
+                        padding: const EdgeInsets.all(16.0),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
-                              'Status: ',
+                              name,
+                              style: TextStyle(
+                                color: Colors.blue[800],
+                                fontWeight: FontWeight.bold,
+                                fontSize: 18,
+                              ),
+                              overflow: TextOverflow.ellipsis,
+                              maxLines: 2,
+                            ),
+                            const SizedBox(height: 16),
+                            Row(
+                              children: [
+                                Text(
+                                  'Status: ',
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.grey[800],
+                                  ),
+                                ),
+                                _buildStatusChip(status),
+                              ],
+                            ),
+                            const SizedBox(height: 16),
+                            Text(
+                              'Budget Amount',
                               style: TextStyle(
                                 fontWeight: FontWeight.bold,
                                 color: Colors.grey[800],
                               ),
                             ),
-                            _buildStatusChip(status),
+                            Text(
+                              _formatCurrency(budget['budget']),
+                              style: TextStyle(
+                                fontSize: 20,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.blue[700],
+                              ),
+                            ),
+                            const SizedBox(height: 16),
+                            Text(
+                              'Description',
+                              style: TextStyle(
+                                fontWeight: FontWeight.bold,
+                                color: Colors.grey[800],
+                              ),
+                            ),
+                            Text(
+                              budget['description'] ??
+                                  'No description provided',
+                              style: TextStyle(color: Colors.grey[600]),
+                            ),
+                            const SizedBox(height: 16),
+                            Text(
+                              'Date Submitted',
+                              style: TextStyle(
+                                fontWeight: FontWeight.bold,
+                                color: Colors.grey[800],
+                              ),
+                            ),
+                            Text(
+                              _formatDate(budget['dateSubmitted']),
+                              style: TextStyle(color: Colors.grey[600]),
+                            ),
+
+                            // Show different information based on status
+                            if (status == 'Approved') ...[
+                              const SizedBox(height: 16),
+                              Text(
+                                'Date Approved',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.grey[800],
+                                ),
+                              ),
+                              Text(
+                                _formatDate(budget['dateApproved']),
+                                style: TextStyle(color: Colors.grey[600]),
+                              ),
+                            ],
+
+                            if (status == 'For Revision') ...[
+                              const SizedBox(height: 16),
+                              Text(
+                                'Revision Requested',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.grey[800],
+                                ),
+                              ),
+                              Text(
+                                _formatDate(budget['revisionRequested']),
+                                style: TextStyle(color: Colors.grey[600]),
+                              ),
+                              const SizedBox(height: 8),
+                              Text(
+                                'Notes',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.grey[800],
+                                ),
+                              ),
+                              Container(
+                                padding: const EdgeInsets.all(8),
+                                decoration: BoxDecoration(
+                                  color: Colors.amber[50],
+                                  borderRadius: BorderRadius.circular(4),
+                                  border: Border.all(color: Colors.amber[100]!),
+                                ),
+                                child: Text(
+                                  budget['revisionNotes'] ??
+                                      'No notes provided',
+                                  style: TextStyle(color: Colors.amber[800]),
+                                ),
+                              ),
+                            ],
+
+                            if (status == 'Denied') ...[
+                              const SizedBox(height: 16),
+                              Text(
+                                'Date Denied',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.grey[800],
+                                ),
+                              ),
+                              Text(
+                                _formatDate(budget['dateDenied']),
+                                style: TextStyle(color: Colors.grey[600]),
+                              ),
+                              const SizedBox(height: 8),
+                              Text(
+                                'Reason',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.grey[800],
+                                ),
+                              ),
+                              Container(
+                                padding: const EdgeInsets.all(8),
+                                decoration: BoxDecoration(
+                                  color: Colors.red[50],
+                                  borderRadius: BorderRadius.circular(4),
+                                  border: Border.all(color: Colors.red[100]!),
+                                ),
+                                child: Text(
+                                  budget['denialReason'] ??
+                                      'No reason provided',
+                                  style: TextStyle(color: Colors.red[700]),
+                                ),
+                              ),
+                            ],
+                            const SizedBox(height: 24),
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.end,
+                              children: [
+                                TextButton(
+                                  onPressed: () => Navigator.pop(context),
+                                  child: Text(
+                                    'Close',
+                                    style: TextStyle(color: Colors.grey[700]),
+                                  ),
+                                ),
+                                if (status == 'Pending')
+                                  ElevatedButton(
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor: Colors.green[700],
+                                    ),
+                                    onPressed:
+                                        isLoading
+                                            ? null
+                                            : () async {
+                                              setState(() {
+                                                isLoading = true;
+                                              });
+
+                                              try {
+                                                // Update budget status to Approved
+                                                await _databaseService
+                                                    .updateBudgetStatus(
+                                                      id,
+                                                      'Approved',
+                                                    );
+
+                                                Navigator.pop(context);
+
+                                                // Refresh budget list
+                                                _fetchBudgets();
+
+                                                // Show success message
+                                                ScaffoldMessenger.of(
+                                                  context,
+                                                ).showSnackBar(
+                                                  const SnackBar(
+                                                    content: Text(
+                                                      'Budget approved',
+                                                    ),
+                                                  ),
+                                                );
+                                              } catch (e) {
+                                                ScaffoldMessenger.of(
+                                                  context,
+                                                ).showSnackBar(
+                                                  SnackBar(
+                                                    content: Text(
+                                                      'Error: ${e.toString()}',
+                                                    ),
+                                                  ),
+                                                );
+                                              } finally {
+                                                setState(() {
+                                                  isLoading = false;
+                                                });
+                                              }
+                                            },
+                                    child:
+                                        isLoading
+                                            ? const SizedBox(
+                                              width: 20,
+                                              height: 20,
+                                              child: CircularProgressIndicator(
+                                                color: Colors.white,
+                                                strokeWidth: 2.0,
+                                              ),
+                                            )
+                                            : const Text('Approve'),
+                                  ),
+                                if (status == 'For Revision')
+                                  ElevatedButton(
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor: Colors.blue[700],
+                                    ),
+                                    onPressed: () {
+                                      Navigator.pop(context);
+                                      // Handle revision submission
+                                      // This would typically open another dialog for editing
+                                      ScaffoldMessenger.of(
+                                        context,
+                                      ).showSnackBar(
+                                        const SnackBar(
+                                          content: Text(
+                                            'Revision feature coming soon',
+                                          ),
+                                        ),
+                                      );
+                                    },
+                                    child: const Text('Submit Revisions'),
+                                  ),
+                                if (status == 'Denied')
+                                  ElevatedButton(
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor: Colors.orange[700],
+                                    ),
+                                    onPressed:
+                                        isLoading
+                                            ? null
+                                            : () async {
+                                              setState(() {
+                                                isLoading = true;
+                                              });
+
+                                              try {
+                                                // Update budget status to Pending (resubmitted)
+                                                await _databaseService
+                                                    .updateBudgetStatus(
+                                                      id,
+                                                      'Pending',
+                                                    );
+
+                                                Navigator.pop(context);
+
+                                                // Refresh budget list
+                                                _fetchBudgets();
+
+                                                // Show success message
+                                                ScaffoldMessenger.of(
+                                                  context,
+                                                ).showSnackBar(
+                                                  const SnackBar(
+                                                    content: Text(
+                                                      'Budget resubmitted',
+                                                    ),
+                                                  ),
+                                                );
+                                              } catch (e) {
+                                                ScaffoldMessenger.of(
+                                                  context,
+                                                ).showSnackBar(
+                                                  SnackBar(
+                                                    content: Text(
+                                                      'Error: ${e.toString()}',
+                                                    ),
+                                                  ),
+                                                );
+                                              } finally {
+                                                setState(() {
+                                                  isLoading = false;
+                                                });
+                                              }
+                                            },
+                                    child:
+                                        isLoading
+                                            ? const SizedBox(
+                                              width: 20,
+                                              height: 20,
+                                              child: CircularProgressIndicator(
+                                                color: Colors.white,
+                                                strokeWidth: 2.0,
+                                              ),
+                                            )
+                                            : const Text('Resubmit'),
+                                  ),
+                              ],
+                            ),
                           ],
                         ),
-                        const SizedBox(height: 16),
-                        Text(
-                          'Budget Amount',
-                          style: TextStyle(
-                            fontWeight: FontWeight.bold,
-                            color: Colors.grey[800],
-                          ),
-                        ),
-                        Text(
-                          _formatCurrency(budget['budget']),
-                          style: TextStyle(
-                            fontSize: 20,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.blue[700],
-                          ),
-                        ),
-                        const SizedBox(height: 16),
-                        Text(
-                          'Description',
-                          style: TextStyle(
-                            fontWeight: FontWeight.bold,
-                            color: Colors.grey[800],
-                          ),
-                        ),
-                        Text(
-                          budget['description'] ?? 'No description provided',
-                          style: TextStyle(color: Colors.grey[600]),
-                        ),
-                        const SizedBox(height: 16),
-                        Text(
-                          'Date Submitted',
-                          style: TextStyle(
-                            fontWeight: FontWeight.bold,
-                            color: Colors.grey[800],
-                          ),
-                        ),
-                        Text(
-                          _formatDate(budget['dateSubmitted']),
-                          style: TextStyle(color: Colors.grey[600]),
-                        ),
-
-                        // Show different information based on status
-                        if (status == 'Approved') ...[
-                          const SizedBox(height: 16),
-                          Text(
-                            'Date Approved',
-                            style: TextStyle(
-                              fontWeight: FontWeight.bold,
-                              color: Colors.grey[800],
-                            ),
-                          ),
-                          Text(
-                            _formatDate(budget['dateApproved']),
-                            style: TextStyle(color: Colors.grey[600]),
-                          ),
-                        ],
-
-                        if (status == 'For Revision') ...[
-                          const SizedBox(height: 16),
-                          Text(
-                            'Revision Requested',
-                            style: TextStyle(
-                              fontWeight: FontWeight.bold,
-                              color: Colors.grey[800],
-                            ),
-                          ),
-                          Text(
-                            _formatDate(budget['revisionRequested']),
-                            style: TextStyle(color: Colors.grey[600]),
-                          ),
-                          const SizedBox(height: 8),
-                          Text(
-                            'Notes',
-                            style: TextStyle(
-                              fontWeight: FontWeight.bold,
-                              color: Colors.grey[800],
-                            ),
-                          ),
-                          Container(
-                            padding: const EdgeInsets.all(8),
-                            decoration: BoxDecoration(
-                              color: Colors.amber[50],
-                              borderRadius: BorderRadius.circular(4),
-                              border: Border.all(color: Colors.amber[100]!),
-                            ),
-                            child: Text(
-                              budget['revisionNotes'] ?? 'No notes provided',
-                              style: TextStyle(color: Colors.amber[800]),
-                            ),
-                          ),
-                        ],
-
-                        if (status == 'Denied') ...[
-                          const SizedBox(height: 16),
-                          Text(
-                            'Date Denied',
-                            style: TextStyle(
-                              fontWeight: FontWeight.bold,
-                              color: Colors.grey[800],
-                            ),
-                          ),
-                          Text(
-                            _formatDate(budget['dateDenied']),
-                            style: TextStyle(color: Colors.grey[600]),
-                          ),
-                          const SizedBox(height: 8),
-                          Text(
-                            'Reason',
-                            style: TextStyle(
-                              fontWeight: FontWeight.bold,
-                              color: Colors.grey[800],
-                            ),
-                          ),
-                          Container(
-                            padding: const EdgeInsets.all(8),
-                            decoration: BoxDecoration(
-                              color: Colors.red[50],
-                              borderRadius: BorderRadius.circular(4),
-                              border: Border.all(color: Colors.red[100]!),
-                            ),
-                            child: Text(
-                              budget['denialReason'] ?? 'No reason provided',
-                              style: TextStyle(color: Colors.red[700]),
-                            ),
-                          ),
-                        ],
-                      ],
+                      ),
                     ),
                   ),
-                  actions: [
-                    TextButton(
-                      onPressed: () => Navigator.pop(context),
-                      child: Text(
-                        'Close',
-                        style: TextStyle(color: Colors.grey[700]),
-                      ),
-                    ),
-                    if (status == 'Pending')
-                      ElevatedButton(
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.green[700],
-                        ),
-                        onPressed:
-                            isLoading
-                                ? null
-                                : () async {
-                                  setState(() {
-                                    isLoading = true;
-                                  });
-
-                                  try {
-                                    // Update budget status to Approved
-                                    await _databaseService.updateBudgetStatus(
-                                      id,
-                                      'Approved',
-                                    );
-
-                                    Navigator.pop(context);
-
-                                    // Refresh budget list
-                                    _fetchBudgets();
-
-                                    // Show success message
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      const SnackBar(
-                                        content: Text('Budget approved'),
-                                      ),
-                                    );
-                                  } catch (e) {
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      SnackBar(
-                                        content: Text('Error: ${e.toString()}'),
-                                      ),
-                                    );
-                                  } finally {
-                                    setState(() {
-                                      isLoading = false;
-                                    });
-                                  }
-                                },
-                        child:
-                            isLoading
-                                ? const SizedBox(
-                                  width: 20,
-                                  height: 20,
-                                  child: CircularProgressIndicator(
-                                    color: Colors.white,
-                                    strokeWidth: 2.0,
-                                  ),
-                                )
-                                : const Text('Approve'),
-                      ),
-                    if (status == 'For Revision')
-                      ElevatedButton(
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.blue[700],
-                        ),
-                        onPressed: () {
-                          Navigator.pop(context);
-                          // Handle revision submission
-                          // This would typically open another dialog for editing
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                              content: Text('Revision feature coming soon'),
-                            ),
-                          );
-                        },
-                        child: const Text('Submit Revisions'),
-                      ),
-                    if (status == 'Denied')
-                      ElevatedButton(
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.orange[700],
-                        ),
-                        onPressed:
-                            isLoading
-                                ? null
-                                : () async {
-                                  setState(() {
-                                    isLoading = true;
-                                  });
-
-                                  try {
-                                    // Update budget status to Pending (resubmitted)
-                                    await _databaseService.updateBudgetStatus(
-                                      id,
-                                      'Pending',
-                                    );
-
-                                    Navigator.pop(context);
-
-                                    // Refresh budget list
-                                    _fetchBudgets();
-
-                                    // Show success message
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      const SnackBar(
-                                        content: Text('Budget resubmitted'),
-                                      ),
-                                    );
-                                  } catch (e) {
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      SnackBar(
-                                        content: Text('Error: ${e.toString()}'),
-                                      ),
-                                    );
-                                  } finally {
-                                    setState(() {
-                                      isLoading = false;
-                                    });
-                                  }
-                                },
-                        child:
-                            isLoading
-                                ? const SizedBox(
-                                  width: 20,
-                                  height: 20,
-                                  child: CircularProgressIndicator(
-                                    color: Colors.white,
-                                    strokeWidth: 2.0,
-                                  ),
-                                )
-                                : const Text('Resubmit'),
-                      ),
-                  ],
                 ),
           ),
     );

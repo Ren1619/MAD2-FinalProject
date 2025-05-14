@@ -42,7 +42,7 @@ class _LogsPageState extends State<LogsPage> {
     try {
       // Get logs from database service
       _logs = await _databaseService.fetchLogs();
-      
+
       // Convert String timestamp to DateTime for each log
       for (var log in _logs) {
         if (log['timestamp'] != null) {
@@ -336,6 +336,8 @@ class _LogsPageState extends State<LogsPage> {
           title: Text(
             description,
             style: const TextStyle(fontWeight: FontWeight.w500, fontSize: 14),
+            maxLines: 2, // Prevent long descriptions from overflowing
+            overflow: TextOverflow.ellipsis,
           ),
           subtitle: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -348,6 +350,7 @@ class _LogsPageState extends State<LogsPage> {
               Text(
                 'User: $user • IP: $ip',
                 style: TextStyle(color: Colors.grey[600], fontSize: 12),
+                overflow: TextOverflow.ellipsis, // Prevent overflow
               ),
             ],
           ),
@@ -367,108 +370,141 @@ class _LogsPageState extends State<LogsPage> {
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
         child: Padding(
           padding: const EdgeInsets.all(16),
-          child: DataTable(
-            columnSpacing: 16,
-            horizontalMargin: 12,
-            dataRowHeight: 60,
-            columns: const [
-              DataColumn(
-                label: Text(
-                  'Event',
-                  style: TextStyle(fontWeight: FontWeight.bold),
-                ),
+          child: SingleChildScrollView(
+            // Add horizontal scrolling to handle overflow on smaller screens
+            scrollDirection: Axis.horizontal,
+            child: ConstrainedBox(
+              constraints: BoxConstraints(
+                minWidth: 600,
+                maxWidth:
+                    MediaQuery.of(context).size.width > 800
+                        ? MediaQuery.of(context).size.width - 64
+                        : 800,
               ),
-              DataColumn(
-                label: Text(
-                  'User',
-                  style: TextStyle(fontWeight: FontWeight.bold),
-                ),
-              ),
-              DataColumn(
-                label: Text(
-                  'IP Address',
-                  style: TextStyle(fontWeight: FontWeight.bold),
-                ),
-              ),
-              DataColumn(
-                label: Text(
-                  'Timestamp',
-                  style: TextStyle(fontWeight: FontWeight.bold),
-                ),
-              ),
-              DataColumn(
-                label: Text(
-                  'Details',
-                  style: TextStyle(fontWeight: FontWeight.bold),
-                ),
-              ),
-            ],
-            rows:
-                logs.map((log) {
-                  final String description =
-                      log['description'] ?? 'No description';
-                  final DateTime timestamp = log['timestamp'] ?? DateTime.now();
-                  final String user = log['user'] ?? 'Unknown';
-                  final String ip = log['ip'] ?? 'Unknown';
-                  final String type = log['type'] ?? 'Unknown';
+              child: DataTable(
+                columnSpacing: 16,
+                horizontalMargin: 12,
+                dataRowHeight: 60,
+                columns: const [
+                  DataColumn(
+                    label: Text(
+                      'Event',
+                      style: TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                  ),
+                  DataColumn(
+                    label: Text(
+                      'User',
+                      style: TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                  ),
+                  DataColumn(
+                    label: Text(
+                      'IP Address',
+                      style: TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                  ),
+                  DataColumn(
+                    label: Text(
+                      'Timestamp',
+                      style: TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                  ),
+                  DataColumn(
+                    label: Text(
+                      'Details',
+                      style: TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                  ),
+                ],
+                rows:
+                    logs.map((log) {
+                      final String description =
+                          log['description'] ?? 'No description';
+                      final DateTime timestamp =
+                          log['timestamp'] ?? DateTime.now();
+                      final String user = log['user'] ?? 'Unknown';
+                      final String ip = log['ip'] ?? 'Unknown';
+                      final String type = log['type'] ?? 'Unknown';
 
-                  return DataRow(
-                    cells: [
-                      DataCell(
-                        Row(
-                          children: [
-                            CircleAvatar(
-                              radius: 16,
-                              backgroundColor: _getTypeColor(
-                                type,
-                              ).withOpacity(0.2),
-                              child: Icon(
-                                _getLogIcon(type),
-                                color: _getTypeColor(type),
-                                size: 14,
-                              ),
-                            ),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                mainAxisAlignment: MainAxisAlignment.center,
+                      return DataRow(
+                        cells: [
+                          DataCell(
+                            ConstrainedBox(
+                              constraints: const BoxConstraints(maxWidth: 300),
+                              child: Row(
                                 children: [
-                                  Text(
-                                    description,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: const TextStyle(
-                                      fontWeight: FontWeight.w500,
-                                      fontSize: 14,
+                                  CircleAvatar(
+                                    radius: 16,
+                                    backgroundColor: _getTypeColor(
+                                      type,
+                                    ).withOpacity(0.2),
+                                    child: Icon(
+                                      _getLogIcon(type),
+                                      color: _getTypeColor(type),
+                                      size: 14,
                                     ),
                                   ),
-                                  const SizedBox(height: 2),
-                                  Text(
-                                    type,
-                                    style: TextStyle(
-                                      color: _getTypeColor(type),
-                                      fontSize: 12,
-                                      fontWeight: FontWeight.w500,
+                                  const SizedBox(width: 12),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      mainAxisAlignment:
+                                          MainAxisAlignment.center,
+                                      children: [
+                                        Text(
+                                          description,
+                                          overflow: TextOverflow.ellipsis,
+                                          maxLines: 1,
+                                          style: const TextStyle(
+                                            fontWeight: FontWeight.w500,
+                                            fontSize: 14,
+                                          ),
+                                        ),
+                                        const SizedBox(height: 2),
+                                        Text(
+                                          type,
+                                          style: TextStyle(
+                                            color: _getTypeColor(type),
+                                            fontSize: 12,
+                                            fontWeight: FontWeight.w500,
+                                          ),
+                                        ),
+                                      ],
                                     ),
                                   ),
                                 ],
                               ),
                             ),
-                          ],
-                        ),
-                      ),
-                      DataCell(Text(user)),
-                      DataCell(Text(ip)),
-                      DataCell(Text(_formatTimestamp(timestamp))),
-                      DataCell(
-                        IconButton(
-                          icon: const Icon(Icons.info_outline, size: 20),
-                          onPressed: () => _showLogDetails(context, log),
-                        ),
-                      ),
-                    ],
-                  );
-                }).toList(),
+                          ),
+                          DataCell(
+                            ConstrainedBox(
+                              constraints: const BoxConstraints(maxWidth: 120),
+                              child: Text(
+                                user,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          ),
+                          DataCell(
+                            ConstrainedBox(
+                              constraints: const BoxConstraints(maxWidth: 120),
+                              child: Text(ip, overflow: TextOverflow.ellipsis),
+                            ),
+                          ),
+                          DataCell(Text(_formatTimestamp(timestamp))),
+                          DataCell(
+                            IconButton(
+                              icon: const Icon(Icons.info_outline, size: 20),
+                              onPressed: () => _showLogDetails(context, log),
+                            ),
+                          ),
+                        ],
+                      );
+                    }).toList(),
+              ),
+            ),
           ),
         ),
       ),
@@ -498,58 +534,86 @@ class _LogsPageState extends State<LogsPage> {
     final String type = log['type'] ?? 'Unknown';
     final String id = log['id'] ?? '';
 
+    // Use a responsive width based on screen size
+    final double dialogWidth =
+        MediaQuery.of(context).size.width > 600
+            ? 500
+            : MediaQuery.of(context).size.width * 0.9;
+
     showDialog(
       context: context,
       builder:
-          (context) => AlertDialog(
-            title: Text(
-              'Log Details',
-              style: TextStyle(
-                color: Colors.blue[800],
-                fontWeight: FontWeight.bold,
+          (context) => Dialog(
+            // Constrained size to prevent overflow
+            child: ConstrainedBox(
+              constraints: BoxConstraints(
+                maxWidth: dialogWidth,
+                maxHeight: MediaQuery.of(context).size.height * 0.8,
               ),
-            ),
-            content: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  _buildDetailRow('Event Type', type, _getTypeColor(type)),
-                  const SizedBox(height: 16),
-                  _buildDetailRow('Description', description),
-                  const SizedBox(height: 16),
-                  _buildDetailRow('Timestamp', _formatTimestamp(timestamp)),
-                  const SizedBox(height: 16),
-                  _buildDetailRow('User', user),
-                  const SizedBox(height: 16),
-                  _buildDetailRow('IP Address', ip),
+              child: SingleChildScrollView(
+                child: Padding(
+                  padding: const EdgeInsets.all(16.0),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Log Details',
+                        style: TextStyle(
+                          color: Colors.blue[800],
+                          fontWeight: FontWeight.bold,
+                          fontSize: 18,
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      _buildDetailRow('Event Type', type, _getTypeColor(type)),
+                      const SizedBox(height: 16),
+                      _buildDetailRow('Description', description),
+                      const SizedBox(height: 16),
+                      _buildDetailRow('Timestamp', _formatTimestamp(timestamp)),
+                      const SizedBox(height: 16),
+                      _buildDetailRow('User', user),
+                      const SizedBox(height: 16),
+                      _buildDetailRow('IP Address', ip),
 
-                  // Additional information could be added here
-                  const SizedBox(height: 16),
-                  const Divider(),
-                  const SizedBox(height: 8),
-                  const Text(
-                    'Additional Information',
-                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                      // Additional information could be added here
+                      const SizedBox(height: 16),
+                      const Divider(),
+                      const SizedBox(height: 8),
+                      const Text(
+                        'Additional Information',
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 14,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        'Log ID: $id',
+                        style: TextStyle(fontSize: 14, color: Colors.grey[700]),
+                      ),
+                      Text(
+                        'Event ID: LOG-${id.hashCode.abs()}',
+                        style: TextStyle(fontSize: 14, color: Colors.grey[700]),
+                      ),
+                      const SizedBox(height: 16),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.end,
+                        children: [
+                          TextButton(
+                            onPressed: () => Navigator.pop(context),
+                            child: Text(
+                              'Close',
+                              style: TextStyle(color: Colors.grey[700]),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
                   ),
-                  const SizedBox(height: 8),
-                  Text(
-                    'Log ID: $id',
-                    style: TextStyle(fontSize: 14, color: Colors.grey[700]),
-                  ),
-                  Text(
-                    'Event ID: LOG-${id.hashCode.abs()}',
-                    style: TextStyle(fontSize: 14, color: Colors.grey[700]),
-                  ),
-                ],
+                ),
               ),
             ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(context),
-                child: Text('Close', style: TextStyle(color: Colors.grey[700])),
-              ),
-            ],
           ),
     );
   }

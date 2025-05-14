@@ -59,7 +59,7 @@ class MyApp extends StatelessWidget {
         ),
       ),
       // Use the role-based router as the initial screen
-      home: const RoleBasedRouter(),
+      home: const LoginPage(),
       routes: {
         '/login': (context) => const LoginPage(),
         '/signup': (context) => const SignupPage(),
