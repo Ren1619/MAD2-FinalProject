@@ -497,4 +497,53 @@ class DatabaseService extends ChangeNotifier {
       print('Error logging activity: $e');
     }
   }
+
+  // Update an existing budget
+  Future<bool> updateBudget(Map<String, dynamic> budget) async {
+    if (budget['id'] == null) {
+      print('Error: Missing budget ID');
+      return false;
+    }
+
+    try {
+      // Validate budget fields
+      if (budget['name'] == null ||
+          budget['budget'] == null ||
+          budget['description'] == null) {
+        print('Error: Missing required budget fields');
+        return false;
+      }
+
+      // Get current user
+      Map<String, dynamic>? currentUser = await _authService.currentUser;
+      if (currentUser == null) {
+        return false; // Cannot update budget without a user
+      }
+
+      // Ensure the budget amount is a proper number
+      double budgetAmount;
+      if (budget['budget'] is String) {
+        budgetAmount = double.tryParse(budget['budget']) ?? 0.0;
+        budget['budget'] = budgetAmount;
+      } else if (budget['budget'] is int) {
+        budget['budget'] = (budget['budget'] as int).toDouble();
+      } else if (budget['budget'] is! double) {
+        return false;
+      }
+
+      // Update the budget in the database
+      await _dbHelper.updateBudget(budget);
+
+      // Log activity
+      await logActivity('Budget updated: ${budget['name']}', 'Budget');
+
+      // Notify listeners about the change
+      notifyListeners();
+
+      return true;
+    } catch (e) {
+      print('Error updating budget: $e');
+      return false;
+    }
+  }
 }

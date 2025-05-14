@@ -1,0 +1,912 @@
+import 'package:flutter/material.dart';
+import '../services/database_service.dart';
+import '../widgets/common_widgets.dart';
+import '../theme.dart';
+import '../models/budget_model.dart';
+import '../utils/uuid_generator.dart';
+import 'budget_creation_form.dart';
+
+class FinancialPlanningPage extends StatefulWidget {
+  const FinancialPlanningPage({super.key});
+
+  @override
+  _FinancialPlanningPageState createState() => _FinancialPlanningPageState();
+}
+
+class _FinancialPlanningPageState extends State<FinancialPlanningPage>
+    with SingleTickerProviderStateMixin {
+  late TabController _tabController;
+  final TextEditingController _searchController = TextEditingController();
+  String _filterStatus = "All";
+  final DatabaseService _databaseService = DatabaseService();
+  bool _isLoading = true;
+  List<Map<String, dynamic>> _budgets = [];
+  bool _isCreatingBudget = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _tabController = TabController(length: 5, vsync: this);
+    _fetchBudgets();
+
+    // Listen for tab changes to refresh the list
+    _tabController.addListener(() {
+      setState(() {});
+    });
+  }
+
+  @override
+  void dispose() {
+    _tabController.dispose();
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _fetchBudgets() async {
+    setState(() {
+      _isLoading = true;
+    });
+
+    try {
+      _budgets = await _databaseService.fetchBudgets();
+    } catch (e) {
+      print('Error fetching budgets: $e');
+    } finally {
+      setState(() {
+        _isLoading = false;
+      });
+    }
+  }
+
+  // Filter budgets based on the selected tab and search query
+  List<Map<String, dynamic>> _getFilteredBudgets() {
+    if (_isLoading) return [];
+
+    List<Map<String, dynamic>> filteredList = [];
+
+    String statusFilter = '';
+    switch (_tabController.index) {
+      case 0:
+        statusFilter = 'Pending';
+        break;
+      case 1:
+        statusFilter = 'Approved';
+        break;
+      case 2:
+        statusFilter = 'For Revision';
+        break;
+      case 3:
+        statusFilter = 'Denied';
+        break;
+      case 4:
+        statusFilter = 'Archived';
+        break;
+    }
+
+    String searchQuery = _searchController.text.toLowerCase();
+
+    // Filter by status and search query
+    for (var budget in _budgets) {
+      final String status = budget['status'] ?? '';
+      final String name = budget['name'] ?? '';
+      final String description = budget['description'] ?? '';
+
+      if (status == statusFilter) {
+        if (searchQuery.isEmpty ||
+            name.toLowerCase().contains(searchQuery) ||
+            description.toLowerCase().contains(searchQuery)) {
+          filteredList.add(budget);
+        }
+      }
+    }
+
+    // Additional filtering based on _filterStatus
+    if (_filterStatus == "High") {
+      filteredList.sort(
+        (a, b) => (b['budget'] as num).compareTo(a['budget'] as num),
+      );
+    } else if (_filterStatus == "Low") {
+      filteredList.sort(
+        (a, b) => (a['budget'] as num).compareTo(b['budget'] as num),
+      );
+    } else if (_filterStatus == "Recent") {
+      // Sort by dateSubmitted (most recent first)
+      filteredList.sort((a, b) {
+        final aDate = DateTime.parse(a['dateSubmitted'] ?? '2025-01-01');
+        final bDate = DateTime.parse(b['dateSubmitted'] ?? '2025-01-01');
+        return bDate.compareTo(aDate);
+      });
+    }
+
+    return filteredList;
+  }
+
+  // Format currency
+  String _formatCurrency(dynamic amount) {
+    if (amount == null) return '\$0.00';
+
+    double numAmount;
+    if (amount is double) {
+      numAmount = amount;
+    } else if (amount is int) {
+      numAmount = amount.toDouble();
+    } else if (amount is String) {
+      numAmount = double.tryParse(amount) ?? 0.0;
+    } else {
+      numAmount = 0.0;
+    }
+
+    return '\$${numAmount.toStringAsFixed(2)}';
+  }
+
+  // Return appropriate color for status
+  Color _getStatusColor(String status) {
+    switch (status) {
+      case 'Pending':
+        return Colors.orange;
+      case 'Approved':
+        return Colors.green;
+      case 'For Revision':
+        return Colors.blue;
+      case 'Denied':
+        return Colors.red;
+      case 'Archived':
+        return Colors.grey;
+      default:
+        return Colors.black;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      body:
+          _isCreatingBudget
+              ? BudgetCreationForm(
+                onBudgetCreated: () {
+                  setState(() {
+                    _isCreatingBudget = false;
+                  });
+                  _fetchBudgets();
+                },
+                onCancel: () {
+                  setState(() {
+                    _isCreatingBudget = false;
+                  });
+                },
+              )
+              : Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Title and description
+                  Padding(
+                    padding: const EdgeInsets.all(16.0),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Financial Planning',
+                          style: TextStyle(
+                            fontSize: 24,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.blue[800],
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          'Create and monitor budget requests',
+                          style: TextStyle(
+                            color: Colors.grey[600],
+                            fontSize: 16,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+
+                  // Search and filter section
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16.0),
+                    child: LayoutBuilder(
+                      builder: (context, constraints) {
+                        if (constraints.maxWidth < 600) {
+                          // Mobile layout - stacked
+                          return Column(
+                            children: [
+                              TextField(
+                                controller: _searchController,
+                                decoration: InputDecoration(
+                                  hintText: 'Search budgets...',
+                                  prefixIcon: const Icon(Icons.search),
+                                  border: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(10),
+                                  ),
+                                  contentPadding: EdgeInsets.zero,
+                                ),
+                                onChanged: (_) => setState(() {}),
+                              ),
+                              const SizedBox(height: 12),
+                              Row(
+                                mainAxisAlignment: MainAxisAlignment.end,
+                                children: [_buildFilterDropdown()],
+                              ),
+                            ],
+                          );
+                        } else {
+                          // Desktop/tablet layout
+                          return Row(
+                            children: [
+                              Expanded(
+                                child: TextField(
+                                  controller: _searchController,
+                                  decoration: InputDecoration(
+                                    hintText: 'Search budgets...',
+                                    prefixIcon: const Icon(Icons.search),
+                                    border: OutlineInputBorder(
+                                      borderRadius: BorderRadius.circular(10),
+                                    ),
+                                    contentPadding: EdgeInsets.zero,
+                                  ),
+                                  onChanged: (_) => setState(() {}),
+                                ),
+                              ),
+                              const SizedBox(width: 16),
+                              _buildFilterDropdown(),
+                            ],
+                          );
+                        }
+                      },
+                    ),
+                  ),
+
+                  const SizedBox(height: 16),
+
+                  // Tab Bar
+                  TabBar(
+                    controller: _tabController,
+                    isScrollable: true,
+                    onTap: (_) => setState(() {}),
+                    labelColor: Theme.of(context).primaryColor,
+                    unselectedLabelColor: Colors.grey[600],
+                    indicatorColor: Theme.of(context).primaryColor,
+                    tabs: const [
+                      Tab(text: 'Pending'),
+                      Tab(text: 'Approved'),
+                      Tab(text: 'For Revision'),
+                      Tab(text: 'Denied'),
+                      Tab(text: 'Archived'),
+                    ],
+                  ),
+
+                  // Main content area with budget cards
+                  Expanded(
+                    child: TabBarView(
+                      controller: _tabController,
+                      children: [
+                        // Each tab has the same widget but with different filtered data
+                        _buildBudgetList(),
+                        _buildBudgetList(),
+                        _buildBudgetList(),
+                        _buildBudgetList(),
+                        _buildBudgetList(),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+      floatingActionButton:
+          !_isCreatingBudget
+              ? FloatingActionButton(
+                backgroundColor: Colors.blue[700],
+                child: const Icon(Icons.add),
+                onPressed: () {
+                  setState(() {
+                    _isCreatingBudget = true;
+                  });
+                },
+              )
+              : null,
+    );
+  }
+
+  Widget _buildFilterDropdown() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+      decoration: BoxDecoration(
+        border: Border.all(color: Colors.grey[300]!),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: DropdownButton<String>(
+        value: _filterStatus,
+        icon: Icon(Icons.filter_list, color: Colors.blue[700]),
+        underline: const SizedBox(),
+        items: const [
+          DropdownMenuItem(value: 'All', child: Text('All Budgets')),
+          DropdownMenuItem(value: 'High', child: Text('High Value')),
+          DropdownMenuItem(value: 'Low', child: Text('Low Value')),
+          DropdownMenuItem(value: 'Recent', child: Text('Recently Added')),
+        ],
+        onChanged: (value) {
+          setState(() {
+            _filterStatus = value!;
+          });
+        },
+      ),
+    );
+  }
+
+  Widget _buildBudgetList() {
+    if (_isLoading) {
+      return const LoadingIndicator(message: 'Loading budgets...');
+    }
+
+    final filteredBudgets = _getFilteredBudgets();
+
+    if (filteredBudgets.isEmpty) {
+      return EmptyStateWidget(
+        message: 'No budgets found',
+        icon: Icons.account_balance_wallet,
+        actionLabel: 'Create Budget',
+        onActionPressed: () {
+          setState(() {
+            _isCreatingBudget = true;
+          });
+        },
+      );
+    }
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        // Choose layout based on screen width
+        if (constraints.maxWidth < 600) {
+          return _buildMobileList(filteredBudgets);
+        } else if (constraints.maxWidth < 1000) {
+          return _buildTabletList(filteredBudgets);
+        } else {
+          return _buildDesktopList(filteredBudgets);
+        }
+      },
+    );
+  }
+
+  // Mobile layout - stacked cards
+  Widget _buildMobileList(List<Map<String, dynamic>> budgets) {
+    return ListView.builder(
+      padding: const EdgeInsets.all(16),
+      itemCount: budgets.length,
+      itemBuilder: (context, index) {
+        final budget = budgets[index];
+        return Card(
+          margin: const EdgeInsets.only(bottom: 16),
+          elevation: 2,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Expanded(
+                      child: Text(
+                        budget['name'] ?? 'Unnamed Budget',
+                        style: const TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 16,
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    _buildStatusChip(budget['status'] ?? 'Pending'),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  _formatCurrency(budget['budget']),
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 18,
+                    color: Colors.blue[700],
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  budget['description'] ?? 'No description provided',
+                  style: TextStyle(color: Colors.grey[700], fontSize: 14),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                const SizedBox(height: 12),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      'Submitted: ${_formatDate(budget['dateSubmitted'])}',
+                      style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+                    ),
+                    _buildActionButton(budget),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  // Helper method to format date string
+  String _formatDate(dynamic date) {
+    if (date == null) return 'Unknown';
+
+    if (date is String) {
+      try {
+        final DateTime dateTime = DateTime.parse(date);
+        return dateTime.toString().substring(0, 10);
+      } catch (e) {
+        return date;
+      }
+    } else {
+      return 'Invalid date';
+    }
+  }
+
+  // Tablet layout - grid cards
+  Widget _buildTabletList(List<Map<String, dynamic>> budgets) {
+    return GridView.builder(
+      padding: const EdgeInsets.all(16),
+      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: 2,
+        childAspectRatio: 1.5,
+        crossAxisSpacing: 16,
+        mainAxisSpacing: 16,
+      ),
+      itemCount: budgets.length,
+      itemBuilder: (context, index) {
+        final budget = budgets[index];
+        return Card(
+          elevation: 2,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Expanded(
+                      child: Text(
+                        budget['name'] ?? 'Unnamed Budget',
+                        style: const TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 16,
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    _buildStatusChip(budget['status'] ?? 'Pending'),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  _formatCurrency(budget['budget']),
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 18,
+                    color: Colors.blue[700],
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Expanded(
+                  child: Text(
+                    budget['description'] ?? 'No description provided',
+                    style: TextStyle(color: Colors.grey[700], fontSize: 14),
+                    maxLines: 3,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      'Submitted: ${_formatDate(budget['dateSubmitted'])}',
+                      style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+                    ),
+                    _buildActionButton(budget),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  // Desktop layout - table
+  Widget _buildDesktopList(List<Map<String, dynamic>> budgets) {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(16),
+      child: Card(
+        elevation: 2,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: DataTable(
+            columnSpacing: 16,
+            horizontalMargin: 12,
+            columns: const [
+              DataColumn(
+                label: Text(
+                  'Name',
+                  style: TextStyle(fontWeight: FontWeight.bold),
+                ),
+              ),
+              DataColumn(
+                label: Text(
+                  'Budget',
+                  style: TextStyle(fontWeight: FontWeight.bold),
+                ),
+              ),
+              DataColumn(
+                label: Text(
+                  'Description',
+                  style: TextStyle(fontWeight: FontWeight.bold),
+                ),
+              ),
+              DataColumn(
+                label: Text(
+                  'Status',
+                  style: TextStyle(fontWeight: FontWeight.bold),
+                ),
+              ),
+              DataColumn(
+                label: Text(
+                  'Date',
+                  style: TextStyle(fontWeight: FontWeight.bold),
+                ),
+              ),
+              DataColumn(
+                label: Text(
+                  'Actions',
+                  style: TextStyle(fontWeight: FontWeight.bold),
+                ),
+              ),
+            ],
+            rows:
+                budgets.map((budget) {
+                  return DataRow(
+                    cells: [
+                      DataCell(
+                        SizedBox(
+                          width: 150,
+                          child: Text(
+                            budget['name'] ?? 'Unnamed Budget',
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ),
+                      DataCell(
+                        Text(
+                          _formatCurrency(budget['budget']),
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            color: Colors.blue[700],
+                          ),
+                        ),
+                      ),
+                      DataCell(
+                        SizedBox(
+                          width: 250,
+                          child: Text(
+                            budget['description'] ?? 'No description provided',
+                            overflow: TextOverflow.ellipsis,
+                            maxLines: 2,
+                          ),
+                        ),
+                      ),
+                      DataCell(_buildStatusChip(budget['status'] ?? 'Pending')),
+                      DataCell(Text(_formatDate(budget['dateSubmitted']))),
+                      DataCell(_buildActionButton(budget)),
+                    ],
+                  );
+                }).toList(),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildStatusChip(String status) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+      decoration: BoxDecoration(
+        color: _getStatusColor(status).withOpacity(0.1),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: _getStatusColor(status).withOpacity(0.3)),
+      ),
+      child: Text(
+        status,
+        style: TextStyle(
+          color: _getStatusColor(status),
+          fontWeight: FontWeight.bold,
+          fontSize: 12,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildActionButton(Map<String, dynamic> budget) {
+    IconData icon;
+    String tooltip;
+    String status = budget['status'] ?? 'Pending';
+    String id = budget['id'] ?? '';
+
+    // Different actions based on status
+    switch (status) {
+      case 'Pending':
+        icon = Icons.check_circle_outline;
+        tooltip = 'View Details';
+        break;
+      case 'Approved':
+        icon = Icons.description;
+        tooltip = 'View Details';
+        break;
+      case 'For Revision':
+        icon = Icons.edit;
+        tooltip = 'Edit';
+        break;
+      case 'Denied':
+        icon = Icons.refresh;
+        tooltip = 'Resubmit';
+        break;
+      case 'Archived':
+        icon = Icons.restore;
+        tooltip = 'Restore';
+        break;
+      default:
+        icon = Icons.more_horiz;
+        tooltip = 'More';
+    }
+
+    return IconButton(
+      icon: Icon(icon, color: Colors.blue[700]),
+      tooltip: tooltip,
+      onPressed: () {
+        _showBudgetDetailsDialog(context, budget);
+      },
+    );
+  }
+
+  void _showBudgetDetailsDialog(
+    BuildContext context,
+    Map<String, dynamic> budget,
+  ) {
+    final String id = budget['id'] ?? '';
+    final String status = budget['status'] ?? 'Pending';
+    final String name = budget['name'] ?? 'Unnamed Budget';
+
+    showDialog(
+      context: context,
+      builder:
+          (context) => StatefulBuilder(
+            builder:
+                (context, setState) => AlertDialog(
+                  title: Text(
+                    name,
+                    style: TextStyle(
+                      color: Colors.blue[800],
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  content: SingleChildScrollView(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Text(
+                              'Status: ',
+                              style: TextStyle(
+                                fontWeight: FontWeight.bold,
+                                color: Colors.grey[800],
+                              ),
+                            ),
+                            _buildStatusChip(status),
+                          ],
+                        ),
+                        const SizedBox(height: 16),
+                        Text(
+                          'Budget Amount',
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            color: Colors.grey[800],
+                          ),
+                        ),
+                        Text(
+                          _formatCurrency(budget['budget']),
+                          style: TextStyle(
+                            fontSize: 20,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.blue[700],
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+                        Text(
+                          'Description',
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            color: Colors.grey[800],
+                          ),
+                        ),
+                        Text(
+                          budget['description'] ?? 'No description provided',
+                          style: TextStyle(color: Colors.grey[600]),
+                        ),
+                        const SizedBox(height: 16),
+                        Text(
+                          'Date Submitted',
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            color: Colors.grey[800],
+                          ),
+                        ),
+                        Text(
+                          _formatDate(budget['dateSubmitted']),
+                          style: TextStyle(color: Colors.grey[600]),
+                        ),
+
+                        // Show different information based on status
+                        if (status == 'Approved') ...[
+                          const SizedBox(height: 16),
+                          Text(
+                            'Date Approved',
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              color: Colors.grey[800],
+                            ),
+                          ),
+                          Text(
+                            _formatDate(budget['dateApproved']),
+                            style: TextStyle(color: Colors.grey[600]),
+                          ),
+                        ],
+
+                        if (status == 'For Revision') ...[
+                          const SizedBox(height: 16),
+                          Text(
+                            'Revision Requested',
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              color: Colors.grey[800],
+                            ),
+                          ),
+                          Text(
+                            _formatDate(budget['revisionRequested']),
+                            style: TextStyle(color: Colors.grey[600]),
+                          ),
+                          const SizedBox(height: 8),
+                          Text(
+                            'Notes',
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              color: Colors.grey[800],
+                            ),
+                          ),
+                          Container(
+                            padding: const EdgeInsets.all(8),
+                            decoration: BoxDecoration(
+                              color: Colors.amber[50],
+                              borderRadius: BorderRadius.circular(4),
+                              border: Border.all(color: Colors.amber[100]!),
+                            ),
+                            child: Text(
+                              budget['revisionNotes'] ?? 'No notes provided',
+                              style: TextStyle(color: Colors.amber[800]),
+                            ),
+                          ),
+                        ],
+
+                        if (status == 'Denied') ...[
+                          const SizedBox(height: 16),
+                          Text(
+                            'Date Denied',
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              color: Colors.grey[800],
+                            ),
+                          ),
+                          Text(
+                            _formatDate(budget['dateDenied']),
+                            style: TextStyle(color: Colors.grey[600]),
+                          ),
+                          const SizedBox(height: 8),
+                          Text(
+                            'Reason',
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              color: Colors.grey[800],
+                            ),
+                          ),
+                          Container(
+                            padding: const EdgeInsets.all(8),
+                            decoration: BoxDecoration(
+                              color: Colors.red[50],
+                              borderRadius: BorderRadius.circular(4),
+                              border: Border.all(color: Colors.red[100]!),
+                            ),
+                            child: Text(
+                              budget['denialReason'] ?? 'No reason provided',
+                              style: TextStyle(color: Colors.red[700]),
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                  actions: [
+                    TextButton(
+                      onPressed: () => Navigator.pop(context),
+                      style: TextButton.styleFrom(
+                        foregroundColor: Colors.grey[700],
+                      ),
+                      child: const Text('Close'),
+                    ),
+                    if (status == 'For Revision')
+                      ElevatedButton(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.blue[700],
+                        ),
+                        onPressed: () {
+                          Navigator.pop(context);
+                          // Show editing form
+                          setState(() {
+                            _isCreatingBudget = true;
+                          });
+                        },
+                        child: const Text('Edit Budget'),
+                      ),
+                    if (status == 'Denied')
+                      ElevatedButton(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.orange[700],
+                        ),
+                        onPressed: () async {
+                          // Resubmit budget logic
+                          try {
+                            await _databaseService.updateBudgetStatus(
+                              id,
+                              'Pending',
+                            );
+
+                            Navigator.pop(context);
+                            _fetchBudgets();
+
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text(
+                                  'Budget resubmitted successfully',
+                                ),
+                              ),
+                            );
+                          } catch (e) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(content: Text('Error: ${e.toString()}')),
+                            );
+                          }
+                        },
+                        child: const Text('Resubmit'),
+                      ),
+                  ],
+                ),
+          ),
+    );
+  }
+}

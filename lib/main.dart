@@ -3,7 +3,7 @@ import 'package:provider/provider.dart';
 import 'login_page.dart';
 import 'signup_page.dart';
 import 'otp_verification_page.dart';
-import 'home_admin.dart';
+import 'role_based_router.dart';
 import 'services/database_helper.dart';
 import 'services/database_service.dart';
 import 'services/auth_service.dart';
@@ -57,12 +57,11 @@ class MyApp extends StatelessWidget {
           ),
         ),
       ),
-      // Set the initial route to login to require authentication
-      initialRoute: '/login',
+      // Use the role-based router as the initial screen
+      home: const RoleBasedRouter(),
       routes: {
         '/login': (context) => const LoginPage(),
         '/signup': (context) => const SignupPage(),
-        '/home': (context) => const HomeAdminPage(),
         '/verify':
             (context) => const OtpVerificationPage(email: 'user@example.com'),
       },
