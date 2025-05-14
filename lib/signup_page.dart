@@ -25,7 +25,7 @@ class _SignupPageState extends State<SignupPage> {
   final _passwordController = TextEditingController();
   final _confirmPasswordController = TextEditingController();
   final _phoneController = TextEditingController();
-  String _selectedRole = 'Budget Manager';
+  // Remove the _selectedRole variable as the role will always be Company Admin
 
   // Company details
   final _companyNameController = TextEditingController();
@@ -44,12 +44,6 @@ class _SignupPageState extends State<SignupPage> {
   bool _obscurePassword = true;
   bool _agreeToTerms = false;
   bool _enableNotifications = true;
-
-  final List<String> _roles = [
-    'Budget Manager',
-    'Financial Planning and Analysis Manager',
-    'Authorized Spender',
-  ];
 
   final List<String> _companySizes = [
     '1-10 employees',
@@ -231,12 +225,14 @@ class _SignupPageState extends State<SignupPage> {
       );
 
       // Register the company and admin user
+      // Note: we're now using ROLE_COMPANY_ADMIN constant for the admin role
       final success = await authService.registerCompanyAndAdmin(
         company: company,
         adminName: _nameController.text,
         adminEmail: _emailController.text,
         adminPassword: _passwordController.text,
-        adminRole: _selectedRole,
+        adminRole:
+            AuthService.ROLE_COMPANY_ADMIN, // Always register as Company Admin
         adminPhone: _phoneController.text,
         enableNotifications: _enableNotifications,
       );
@@ -619,42 +615,38 @@ class _SignupPageState extends State<SignupPage> {
           ),
           const SizedBox(height: 16),
 
-          // Role selection
-          Text(
-            'Role',
-            style: TextStyle(
-              fontSize: 16,
-              fontWeight: FontWeight.bold,
-              color: Colors.grey[800],
-            ),
-          ),
-          const SizedBox(height: 8),
+          // Display the role as read-only information
           Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12),
+            padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
-              border: Border.all(color: Colors.grey[300]!),
+              color: Colors.blue[50],
               borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: Colors.blue[200]!),
             ),
-            child: DropdownButtonHideUnderline(
-              child: DropdownButton<String>(
-                value: _selectedRole,
-                isExpanded: true,
-                icon: const Icon(Icons.arrow_drop_down),
-                items:
-                    _roles.map((String role) {
-                      return DropdownMenuItem<String>(
-                        value: role,
-                        child: Text(role),
-                      );
-                    }).toList(),
-                onChanged: (String? newValue) {
-                  if (newValue != null) {
-                    setState(() {
-                      _selectedRole = newValue;
-                    });
-                  }
-                },
-              ),
+            child: Row(
+              children: [
+                Icon(Icons.admin_panel_settings, color: Colors.blue[700]),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Administrator Role',
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          color: Colors.blue[800],
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        'Your account will be created with full administrator privileges',
+                        style: TextStyle(color: Colors.blue[800]),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
             ),
           ),
           const SizedBox(height: 24),
@@ -1078,11 +1070,11 @@ class _SignupPageState extends State<SignupPage> {
                         ? 'Not provided'
                         : _phoneController.text,
                   ),
-                  _buildReviewItem('Role', _selectedRole),
+                  _buildReviewItem('Role', 'Company Admin'), // Fixed role
                 ],
               ),
             ),
-          ),
+          ), 
           const SizedBox(height: 16),
 
           // Company Information Card
