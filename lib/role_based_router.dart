@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'login_page.dart';
 import 'home_admin.dart';
-import 'financial_planning/financial_planning_manager_home.dart';
+import 'financial_planning/financial_planning_page.dart';
 import 'services/auth_service.dart';
 import 'services/database_service.dart';
 
@@ -63,7 +63,7 @@ class _RoleBasedRouterState extends State<RoleBasedRouter> {
       case 'Company Admin':
         return const HomeAdminPage();
       case 'Financial Planning and Analysis Manager':
-        return const FinancialPlanningManagerHome();
+        return const FinancialPlanningPage();
       case 'Budget Manager':
         // TODO: Implement Budget Manager home page
         return const Scaffold(

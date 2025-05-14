@@ -1,3 +1,5 @@
+// Updated main.dart
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'login_page.dart';
@@ -7,7 +9,6 @@ import 'role_based_router.dart';
 import 'services/database_helper.dart';
 import 'services/database_service.dart';
 import 'services/auth_service.dart';
-import 'utils/debug_data.dart';
 
 void main() async {
   // Ensure Flutter is initialized
@@ -22,8 +23,8 @@ void main() async {
   // Create initial admin user if database is empty
   await authService.createInitialAdminIfNeeded();
 
-  // Populate debug data if in development mode
-  await DebugData.populateDebugData();
+  // Removed debug data population for production
+  // await DebugData.populateDebugData();
 
   runApp(
     // Provide DatabaseService at the root level

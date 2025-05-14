@@ -1,3 +1,5 @@
+// Updated login_page.dart
+
 import 'package:flutter/material.dart';
 import 'otp_verification_page.dart';
 import 'home_admin.dart';
@@ -21,14 +23,12 @@ class _LoginPageState extends State<LoginPage> {
   final DatabaseService _databaseService = DatabaseService();
   bool _obscureText = true;
   bool _isLoading = false;
-  bool _skipOTP = true; // Toggle for development mode
+  bool _skipOTP = false; // Set to false to enable OTP verification
 
   @override
   void initState() {
     super.initState();
-    // Pre-fill with default admin credentials in development
-    _emailController.text = "admin@example.com";
-    _passwordController.text = "password";
+    // Removed pre-filled credentials for production
   }
 
   @override
@@ -51,12 +51,8 @@ class _LoginPageState extends State<LoginPage> {
     try {
       // Use the auth service to sign in
       bool success = await _authService.signInWithEmail(
-        _emailController.text.isEmpty
-            ? "admin@example.com"
-            : _emailController.text,
-        _passwordController.text.isEmpty
-            ? "password123"
-            : _passwordController.text,
+        _emailController.text,
+        _passwordController.text,
       );
 
       if (success) {
@@ -68,14 +64,7 @@ class _LoginPageState extends State<LoginPage> {
         } else {
           // Otherwise, go to the OTP verification page
           Navigator.of(context).push(
-            createPageRoute(
-              OtpVerificationPage(
-                email:
-                    _emailController.text.isEmpty
-                        ? "admin@example.com"
-                        : _emailController.text,
-              ),
-            ),
+            createPageRoute(OtpVerificationPage(email: _emailController.text)),
           );
         }
       } else {
@@ -102,36 +91,6 @@ class _LoginPageState extends State<LoginPage> {
         ),
       );
     } finally {
-      setState(() {
-        _isLoading = false;
-      });
-    }
-  }
-
-  // Skip login and go directly to home screen
-  void _skipLogin() async {
-    setState(() {
-      _isLoading = true;
-    });
-
-    try {
-      // Log skipped login for tracking
-      await _databaseService.logActivity(
-        'Login skipped (development mode)',
-        'Authentication',
-      );
-
-      // Go straight to home page
-      Navigator.of(context).pushNamedAndRemoveUntil('/home', (route) => false);
-    } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Error skipping login: ${e.toString()}'),
-          backgroundColor: Colors.red[700],
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
-
       setState(() {
         _isLoading = false;
       });
@@ -503,33 +462,9 @@ class _LoginPageState extends State<LoginPage> {
                           ],
                         ),
 
-                        const SizedBox(height: 16.0),
-
-                        // Skip Login Button (Development Mode)
-                        Container(
-                          decoration: BoxDecoration(
-                            border: Border.all(color: Colors.amber),
-                            borderRadius: BorderRadius.circular(10),
-                            color: Colors.amber[50],
-                          ),
-                          child: TextButton.icon(
-                            icon: const Icon(Icons.developer_mode),
-                            label: const Text(
-                              'Skip Login (Development Mode)',
-                              style: TextStyle(fontWeight: FontWeight.bold),
-                            ),
-                            style: TextButton.styleFrom(
-                              foregroundColor: Colors.amber[800],
-                              minimumSize: const Size(double.infinity, 50),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(10),
-                              ),
-                            ),
-                            onPressed: _isLoading ? null : _skipLogin,
-                          ),
-                        ),
-
                         const SizedBox(height: 24.0),
+
+                        // Removed "Skip Login" button for production
 
                         // Footer text
                         Center(
