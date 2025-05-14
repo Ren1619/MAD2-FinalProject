@@ -546,4 +546,108 @@ class DatabaseService extends ChangeNotifier {
       return false;
     }
   }
+
+  Future<List<Map<String, dynamic>>> fetchAuthorizedBudgets() async {
+    try {
+      // Get current user
+      Map<String, dynamic>? currentUser = await _authService.currentUser;
+
+      if (currentUser == null || currentUser['id'] == null) {
+        return [];
+      }
+
+      String userId = currentUser['id'];
+
+      // Get all budgets
+      List<Map<String, dynamic>> allBudgets = await _dbHelper.getBudgets();
+
+      // Filter budgets where this user is an authorized spender
+      List<Map<String, dynamic>> authorizedBudgets =
+          allBudgets.where((budget) {
+            List<dynamic> authorizedSpenders =
+                budget['authorizedSpenders'] ?? [];
+            return authorizedSpenders.contains(userId);
+          }).toList();
+
+      return authorizedBudgets;
+    } catch (e) {
+      print('Error fetching authorized budgets: $e');
+      return [];
+    }
+  }
+
+  // Get Budget by ID
+  Future<Map<String, dynamic>?> getBudgetById(String budgetId) async {
+    try {
+      return await _dbHelper.getBudgetById(budgetId);
+    } catch (e) {
+      print('Error getting budget by ID: $e');
+      return null;
+    }
+  }
+
+  Future<List<Map<String, dynamic>>> fetchExpensesWithBudgetInfo({
+    String? status,
+    String? category,
+  }) async {
+    try {
+      List<Map<String, dynamic>> expenses = await _dbHelper.getExpenses(
+        status: status,
+        category: category,
+      );
+
+      // Enhance each expense with budget information
+      for (int i = 0; i < expenses.length; i++) {
+        final String? budgetId = expenses[i]['budgetId'];
+
+        if (budgetId != null) {
+          Map<String, dynamic>? budget = await _dbHelper.getBudgetById(
+            budgetId,
+          );
+
+          if (budget != null) {
+            expenses[i]['budgetName'] = budget['name'];
+            expenses[i]['budgetStatus'] = budget['status'];
+          }
+        }
+      }
+
+      return expenses;
+    } catch (e) {
+      print('Error fetching expenses with budget info: $e');
+      return [];
+    }
+  }
+
+  // Mark an expense as fraudulent with a reason
+  Future<bool> markExpenseAsFraudulent(String expenseId, String reason) async {
+    try {
+      // Get expense details for logging
+      Map<String, dynamic>? expense = await _dbHelper.getExpenseById(expenseId);
+
+      if (expense == null) {
+        return false;
+      }
+
+      // Update expense status
+      await _dbHelper.updateExpenseStatus(expenseId, 'Fraudulent');
+
+      // Add reason as a note
+      await _dbHelper.updateExpense({'id': expenseId, 'fraudReason': reason});
+
+      // Log the activity
+      await logActivity(
+        'Expense marked as fraudulent: ${expense['description']} - Reason: $reason',
+        'Budget',
+      );
+
+      // Notify listeners about the change
+      notifyListeners();
+
+      return true;
+    } catch (e) {
+      print('Error marking expense as fraudulent: $e');
+      return false;
+    }
+  }
 }

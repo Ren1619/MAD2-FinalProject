@@ -5,6 +5,8 @@ import 'home_admin.dart';
 import 'financial_planning/financial_planning_page.dart';
 import 'services/auth_service.dart';
 import 'services/database_service.dart';
+import 'budget_manager/budget_manager_dashboard.dart';
+import 'authorized_spender/authorized_budgets_page.dart';
 
 class RoleBasedRouter extends StatefulWidget {
   const RoleBasedRouter({super.key});
@@ -44,11 +46,7 @@ class _RoleBasedRouterState extends State<RoleBasedRouter> {
   @override
   Widget build(BuildContext context) {
     if (_isLoading) {
-      return const Scaffold(
-        body: Center(
-          child: CircularProgressIndicator(),
-        ),
-      );
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
 
     // If no user is logged in, show login page
@@ -65,19 +63,9 @@ class _RoleBasedRouterState extends State<RoleBasedRouter> {
       case 'Financial Planning and Analysis Manager':
         return const FinancialPlanningPage();
       case 'Budget Manager':
-        // TODO: Implement Budget Manager home page
-        return const Scaffold(
-          body: Center(
-            child: Text('Budget Manager Dashboard - Coming Soon'),
-          ),
-        );
+        return const BudgetManagerDashboard();
       case 'Authorized Spender':
-        // TODO: Implement Authorized Spender home page
-        return const Scaffold(
-          body: Center(
-            child: Text('Authorized Spender Dashboard - Coming Soon'),
-          ),
-        );
+        return const AuthorizedBudgetsPage();
       default:
         // Default to login if role is not recognized
         return const LoginPage();
