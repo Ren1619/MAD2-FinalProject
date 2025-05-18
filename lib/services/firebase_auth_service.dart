@@ -1,6 +1,6 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import '../models/company_model.dart';
+import '../models/firebase_models.dart';
 import '../utils/uuid_generator.dart';
 
 class FirebaseAuthService {
