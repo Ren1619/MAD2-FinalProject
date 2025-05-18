@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:provider/provider.dart';
 import 'firebase_options.dart';
 import 'login_page.dart';
@@ -8,6 +9,7 @@ import 'services/firebase_auth_service.dart';
 import 'services/firebase_budget_service.dart';
 import 'services/firebase_logs_service.dart';
 import 'theme.dart';
+import 'pages/admin_dashboard.dart';
 
 void main() async {
   // Ensure Flutter is initialized
@@ -169,64 +171,6 @@ class _AuthWrapperState extends State<AuthWrapper> {
 
 // Import the dashboard widgets (we'll create these in subsequent steps)
 // For now, let's create placeholder widgets
-
-class AdminDashboard extends StatelessWidget {
-  const AdminDashboard({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Administrator Dashboard'),
-        backgroundColor: Colors.white,
-        elevation: 0,
-        actions: [
-          PopupMenuButton<String>(
-            icon: CircleAvatar(
-              backgroundColor: Colors.blue[100],
-              child: Icon(Icons.person, color: Colors.blue[800]),
-            ),
-            onSelected: (value) async {
-              if (value == 'logout') {
-                await context.read<FirebaseAuthService>().signOut();
-              }
-            },
-            itemBuilder:
-                (context) => [
-                  const PopupMenuItem(
-                    value: 'profile',
-                    child: Row(
-                      children: [
-                        Icon(Icons.person),
-                        SizedBox(width: 8),
-                        Text('Profile'),
-                      ],
-                    ),
-                  ),
-                  const PopupMenuItem(
-                    value: 'logout',
-                    child: Row(
-                      children: [
-                        Icon(Icons.logout, color: Colors.red),
-                        SizedBox(width: 8),
-                        Text('Logout', style: TextStyle(color: Colors.red)),
-                      ],
-                    ),
-                  ),
-                ],
-          ),
-        ],
-      ),
-      body: const Center(
-        child: Text(
-          'Administrator Dashboard\n(To be implemented)',
-          textAlign: TextAlign.center,
-          style: TextStyle(fontSize: 18),
-        ),
-      ),
-    );
-  }
-}
 
 class BudgetManagerDashboard extends StatelessWidget {
   const BudgetManagerDashboard({super.key});

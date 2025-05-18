@@ -96,7 +96,7 @@ class FirebaseAuthService {
         final companyId = UuidGenerator.generateUuid();
         await _firestore.collection('companies').doc(companyId).set({
           'company_id': companyId,
-          'company_name': company.name,
+          'company_name': company.companyName,
           'email': company.email,
           'phone': company.phone,
           'address': company.address,
@@ -125,7 +125,7 @@ class FirebaseAuthService {
 
         // Log activity
         await _logActivity(
-          'New company registered: ${company.name} with admin: $adminEmail',
+          'New company registered: ${company.companyName} with admin: $adminEmail',
           'Account Management',
           companyId,
         );
