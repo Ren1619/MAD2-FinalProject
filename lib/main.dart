@@ -1,38 +1,22 @@
-// Updated main.dart
-
 import 'package:flutter/material.dart';
+import 'package:firebase_core/firebase_core.dart';
 import 'package:provider/provider.dart';
+import 'firebase_options.dart';
 import 'login_page.dart';
 import 'signup_page.dart';
-import 'otp_verification_page.dart';
-import 'role_based_router.dart';
-import 'services/database_helper.dart';
-import 'services/database_service.dart';
-import 'services/auth_service.dart';
+import 'services/firebase_auth_service.dart';
+import 'services/firebase_budget_service.dart';
+import 'services/firebase_logs_service.dart';
+import 'theme.dart';
 
 void main() async {
   // Ensure Flutter is initialized
   WidgetsFlutterBinding.ensureInitialized();
 
-  // Initialize database
-  await DatabaseHelper().database;
+  // Initialize Firebase
+  await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
 
-  // Create auth service
-  final AuthService authService = AuthService();
-
-  // Create initial admin user if database is empty
-  await authService.createInitialAdminIfNeeded();
-
-  // Removed debug data population for production
-  // await DebugData.populateDebugData();
-
-  runApp(
-    // Provide DatabaseService at the root level
-    ChangeNotifierProvider(
-      create: (context) => DatabaseService(),
-      child: const MyApp(),
-    ),
-  );
+  runApp(const MyApp());
 }
 
 class MyApp extends StatelessWidget {
@@ -40,32 +24,380 @@ class MyApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'Budget Management System',
-      debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        primarySwatch: Colors.blue,
-        fontFamily: 'Poppins',
-        inputDecorationTheme: InputDecorationTheme(
-          border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-          focusedBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(10),
-            borderSide: BorderSide(color: Colors.blue[700]!, width: 2),
+    return MultiProvider(
+      providers: [
+        // Firebase Authentication Service
+        Provider<FirebaseAuthService>(create: (_) => FirebaseAuthService()),
+        // Firebase Budget Service
+        Provider<FirebaseBudgetService>(create: (_) => FirebaseBudgetService()),
+        // Firebase Logs Service
+        Provider<FirebaseLogsService>(create: (_) => FirebaseLogsService()),
+        // Application State Provider (for UI updates)
+        ChangeNotifierProvider<AppStateNotifier>(
+          create: (_) => AppStateNotifier(),
+        ),
+      ],
+      child: MaterialApp(
+        title: 'Budget Management System',
+        debugShowCheckedModeBanner: false,
+        theme: AppTheme.lightTheme,
+
+        // Use AuthWrapper to handle initial routing
+        home: const AuthWrapper(),
+
+        // Define named routes
+        routes: {
+          '/login': (context) => const LoginPage(),
+          '/signup': (context) => const SignupPage(),
+          '/admin-dashboard': (context) => const AdminDashboard(),
+          '/budget-manager-dashboard':
+              (context) => const BudgetManagerDashboard(),
+          '/financial-officer-dashboard':
+              (context) => const FinancialOfficerDashboard(),
+          '/spender-dashboard': (context) => const AuthorizedSpenderDashboard(),
+        },
+
+        // Handle unknown routes
+        onUnknownRoute: (settings) {
+          return MaterialPageRoute(builder: (context) => const LoginPage());
+        },
+      ),
+    );
+  }
+}
+
+// App State Notifier for managing global state
+class AppStateNotifier extends ChangeNotifier {
+  bool _isLoading = false;
+  String? _errorMessage;
+  Map<String, dynamic>? _currentUser;
+
+  bool get isLoading => _isLoading;
+  String? get errorMessage => _errorMessage;
+  Map<String, dynamic>? get currentUser => _currentUser;
+
+  void setLoading(bool loading) {
+    _isLoading = loading;
+    notifyListeners();
+  }
+
+  void setError(String? error) {
+    _errorMessage = error;
+    notifyListeners();
+  }
+
+  void setCurrentUser(Map<String, dynamic>? user) {
+    _currentUser = user;
+    notifyListeners();
+  }
+
+  void clearError() {
+    _errorMessage = null;
+    notifyListeners();
+  }
+}
+
+// Auth Wrapper to handle initial authentication state
+class AuthWrapper extends StatefulWidget {
+  const AuthWrapper({super.key});
+
+  @override
+  State<AuthWrapper> createState() => _AuthWrapperState();
+}
+
+class _AuthWrapperState extends State<AuthWrapper> {
+  @override
+  Widget build(BuildContext context) {
+    return Consumer<FirebaseAuthService>(
+      builder: (context, authService, child) {
+        return StreamBuilder(
+          stream: FirebaseAuth.instance.authStateChanges(),
+          builder: (context, AsyncSnapshot<User?> snapshot) {
+            // Show loading while checking auth state
+            if (snapshot.connectionState == ConnectionState.waiting) {
+              return const Scaffold(
+                body: Center(child: CircularProgressIndicator()),
+              );
+            }
+
+            // If user is not logged in, show login page
+            if (snapshot.data == null) {
+              return const LoginPage();
+            }
+
+            // If user is logged in, determine which dashboard to show
+            return FutureBuilder<Map<String, dynamic>?>(
+              future: authService.currentUser,
+              builder: (context, userSnapshot) {
+                if (userSnapshot.connectionState == ConnectionState.waiting) {
+                  return const Scaffold(
+                    body: Center(child: CircularProgressIndicator()),
+                  );
+                }
+
+                final userData = userSnapshot.data;
+                if (userData == null) {
+                  return const LoginPage();
+                }
+
+                // Update app state with current user
+                WidgetsBinding.instance.addPostFrameCallback((_) {
+                  context.read<AppStateNotifier>().setCurrentUser(userData);
+                });
+
+                // Route to appropriate dashboard based on role
+                switch (userData['role']) {
+                  case FirebaseAuthService.ROLE_ADMIN:
+                    return const AdminDashboard();
+                  case FirebaseAuthService.ROLE_BUDGET_MANAGER:
+                    return const BudgetManagerDashboard();
+                  case FirebaseAuthService.ROLE_FINANCIAL_OFFICER:
+                    return const FinancialOfficerDashboard();
+                  case FirebaseAuthService.ROLE_AUTHORIZED_SPENDER:
+                    return const AuthorizedSpenderDashboard();
+                  default:
+                    return const LoginPage();
+                }
+              },
+            );
+          },
+        );
+      },
+    );
+  }
+}
+
+// Import the dashboard widgets (we'll create these in subsequent steps)
+// For now, let's create placeholder widgets
+
+class AdminDashboard extends StatelessWidget {
+  const AdminDashboard({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Administrator Dashboard'),
+        backgroundColor: Colors.white,
+        elevation: 0,
+        actions: [
+          PopupMenuButton<String>(
+            icon: CircleAvatar(
+              backgroundColor: Colors.blue[100],
+              child: Icon(Icons.person, color: Colors.blue[800]),
+            ),
+            onSelected: (value) async {
+              if (value == 'logout') {
+                await context.read<FirebaseAuthService>().signOut();
+              }
+            },
+            itemBuilder:
+                (context) => [
+                  const PopupMenuItem(
+                    value: 'profile',
+                    child: Row(
+                      children: [
+                        Icon(Icons.person),
+                        SizedBox(width: 8),
+                        Text('Profile'),
+                      ],
+                    ),
+                  ),
+                  const PopupMenuItem(
+                    value: 'logout',
+                    child: Row(
+                      children: [
+                        Icon(Icons.logout, color: Colors.red),
+                        SizedBox(width: 8),
+                        Text('Logout', style: TextStyle(color: Colors.red)),
+                      ],
+                    ),
+                  ),
+                ],
           ),
-          contentPadding: const EdgeInsets.symmetric(
-            horizontal: 16,
-            vertical: 16,
-          ),
+        ],
+      ),
+      body: const Center(
+        child: Text(
+          'Administrator Dashboard\n(To be implemented)',
+          textAlign: TextAlign.center,
+          style: TextStyle(fontSize: 18),
         ),
       ),
-      // Use the role-based router as the initial screen
-      home: const LoginPage(),
-      routes: {
-        '/login': (context) => const LoginPage(),
-        '/signup': (context) => const SignupPage(),
-        '/verify':
-            (context) => const OtpVerificationPage(email: 'user@example.com'),
-      },
+    );
+  }
+}
+
+class BudgetManagerDashboard extends StatelessWidget {
+  const BudgetManagerDashboard({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Budget Manager Dashboard'),
+        backgroundColor: Colors.white,
+        elevation: 0,
+        actions: [
+          PopupMenuButton<String>(
+            icon: CircleAvatar(
+              backgroundColor: Colors.blue[100],
+              child: Icon(Icons.person, color: Colors.blue[800]),
+            ),
+            onSelected: (value) async {
+              if (value == 'logout') {
+                await context.read<FirebaseAuthService>().signOut();
+              }
+            },
+            itemBuilder:
+                (context) => [
+                  const PopupMenuItem(
+                    value: 'profile',
+                    child: Row(
+                      children: [
+                        Icon(Icons.person),
+                        SizedBox(width: 8),
+                        Text('Profile'),
+                      ],
+                    ),
+                  ),
+                  const PopupMenuItem(
+                    value: 'logout',
+                    child: Row(
+                      children: [
+                        Icon(Icons.logout, color: Colors.red),
+                        SizedBox(width: 8),
+                        Text('Logout', style: TextStyle(color: Colors.red)),
+                      ],
+                    ),
+                  ),
+                ],
+          ),
+        ],
+      ),
+      body: const Center(
+        child: Text(
+          'Budget Manager Dashboard\n(To be implemented)',
+          textAlign: TextAlign.center,
+          style: TextStyle(fontSize: 18),
+        ),
+      ),
+    );
+  }
+}
+
+class FinancialOfficerDashboard extends StatelessWidget {
+  const FinancialOfficerDashboard({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Financial Officer Dashboard'),
+        backgroundColor: Colors.white,
+        elevation: 0,
+        actions: [
+          PopupMenuButton<String>(
+            icon: CircleAvatar(
+              backgroundColor: Colors.blue[100],
+              child: Icon(Icons.person, color: Colors.blue[800]),
+            ),
+            onSelected: (value) async {
+              if (value == 'logout') {
+                await context.read<FirebaseAuthService>().signOut();
+              }
+            },
+            itemBuilder:
+                (context) => [
+                  const PopupMenuItem(
+                    value: 'profile',
+                    child: Row(
+                      children: [
+                        Icon(Icons.person),
+                        SizedBox(width: 8),
+                        Text('Profile'),
+                      ],
+                    ),
+                  ),
+                  const PopupMenuItem(
+                    value: 'logout',
+                    child: Row(
+                      children: [
+                        Icon(Icons.logout, color: Colors.red),
+                        SizedBox(width: 8),
+                        Text('Logout', style: TextStyle(color: Colors.red)),
+                      ],
+                    ),
+                  ),
+                ],
+          ),
+        ],
+      ),
+      body: const Center(
+        child: Text(
+          'Financial Officer Dashboard\n(To be implemented)',
+          textAlign: TextAlign.center,
+          style: TextStyle(fontSize: 18),
+        ),
+      ),
+    );
+  }
+}
+
+class AuthorizedSpenderDashboard extends StatelessWidget {
+  const AuthorizedSpenderDashboard({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Authorized Spender Dashboard'),
+        backgroundColor: Colors.white,
+        elevation: 0,
+        actions: [
+          PopupMenuButton<String>(
+            icon: CircleAvatar(
+              backgroundColor: Colors.blue[100],
+              child: Icon(Icons.person, color: Colors.blue[800]),
+            ),
+            onSelected: (value) async {
+              if (value == 'logout') {
+                await context.read<FirebaseAuthService>().signOut();
+              }
+            },
+            itemBuilder:
+                (context) => [
+                  const PopupMenuItem(
+                    value: 'profile',
+                    child: Row(
+                      children: [
+                        Icon(Icons.person),
+                        SizedBox(width: 8),
+                        Text('Profile'),
+                      ],
+                    ),
+                  ),
+                  const PopupMenuItem(
+                    value: 'logout',
+                    child: Row(
+                      children: [
+                        Icon(Icons.logout, color: Colors.red),
+                        SizedBox(width: 8),
+                        Text('Logout', style: TextStyle(color: Colors.red)),
+                      ],
+                    ),
+                  ),
+                ],
+          ),
+        ],
+      ),
+      body: const Center(
+        child: Text(
+          'Authorized Spender Dashboard\n(To be implemented)',
+          textAlign: TextAlign.center,
+          style: TextStyle(fontSize: 18),
+        ),
+      ),
     );
   }
 }

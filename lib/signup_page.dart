@@ -1,14 +1,12 @@
 import 'package:flutter/material.dart';
-import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
-import 'services/auth_service.dart';
-import 'services/database_service.dart';
-import 'widgets/common_widgets.dart';
-import 'theme.dart';
+import 'services/firebase_auth_service.dart';
+import 'services/firebase_logs_service.dart';
 import 'models/company_model.dart';
+import 'theme.dart';
 
 class SignupPage extends StatefulWidget {
-  const SignupPage({Key? key}) : super(key: key);
+  const SignupPage({super.key});
 
   @override
   _SignupPageState createState() => _SignupPageState();
@@ -16,18 +14,17 @@ class SignupPage extends StatefulWidget {
 
 class _SignupPageState extends State<SignupPage> {
   final _formKey = GlobalKey<FormState>();
-  final _scrollController = ScrollController();
-  final PageController _pageController = PageController();
+  final _pageController = PageController();
 
-  // Admin user details
-  final _nameController = TextEditingController();
-  final _emailController = TextEditingController();
-  final _passwordController = TextEditingController();
-  final _confirmPasswordController = TextEditingController();
-  final _phoneController = TextEditingController();
-  // Remove the _selectedRole variable as the role will always be Company Admin
+  // Admin user controllers
+  final _adminFirstNameController = TextEditingController();
+  final _adminLastNameController = TextEditingController();
+  final _adminEmailController = TextEditingController();
+  final _adminPasswordController = TextEditingController();
+  final _adminConfirmPasswordController = TextEditingController();
+  final _adminPhoneController = TextEditingController();
 
-  // Company details
+  // Company controllers
   final _companyNameController = TextEditingController();
   final _companyEmailController = TextEditingController();
   final _companyPhoneController = TextEditingController();
@@ -36,14 +33,15 @@ class _SignupPageState extends State<SignupPage> {
   final _companyStateController = TextEditingController();
   final _companyZipController = TextEditingController();
   final _companyWebsiteController = TextEditingController();
-  String _companySize = '1-10 employees';
-  String _industryType = 'Information Technology';
 
   int _currentStep = 0;
   bool _isLoading = false;
   bool _obscurePassword = true;
+  bool _obscureConfirmPassword = true;
   bool _agreeToTerms = false;
-  bool _enableNotifications = true;
+
+  String _companySize = '1-10 employees';
+  String _industryType = 'Information Technology';
 
   final List<String> _companySizes = [
     '1-10 employees',
@@ -72,13 +70,13 @@ class _SignupPageState extends State<SignupPage> {
 
   @override
   void dispose() {
-    _scrollController.dispose();
     _pageController.dispose();
-    _nameController.dispose();
-    _emailController.dispose();
-    _passwordController.dispose();
-    _confirmPasswordController.dispose();
-    _phoneController.dispose();
+    _adminFirstNameController.dispose();
+    _adminLastNameController.dispose();
+    _adminEmailController.dispose();
+    _adminPasswordController.dispose();
+    _adminConfirmPasswordController.dispose();
+    _adminPhoneController.dispose();
     _companyNameController.dispose();
     _companyEmailController.dispose();
     _companyPhoneController.dispose();
@@ -93,12 +91,13 @@ class _SignupPageState extends State<SignupPage> {
   void _nextStep() {
     if (_currentStep < 2) {
       // Validate current step
-      if (_currentStep == 0) {
-        // Validate admin information
-        if (!_validateAdminInfo()) {
-          return;
-        }
+      if (_currentStep == 0 && !_validateAdminInfo()) {
+        return;
       }
+      if (_currentStep == 1 && !_validateCompanyInfo()) {
+        return;
+      }
+
       setState(() {
         _currentStep++;
       });
@@ -108,8 +107,8 @@ class _SignupPageState extends State<SignupPage> {
         curve: Curves.easeInOut,
       );
     } else {
-      // Final step - submit form
-      _handleSignup();
+      // Final step - submit registration
+      _handleRegistration();
     }
   }
 
@@ -127,28 +126,33 @@ class _SignupPageState extends State<SignupPage> {
   }
 
   bool _validateAdminInfo() {
-    // Validate admin info fields
-    if (_nameController.text.isEmpty) {
-      _showErrorSnackbar('Please enter your name');
+    // Validate admin information
+    if (_adminFirstNameController.text.trim().isEmpty) {
+      _showErrorSnackBar('Please enter your first name');
       return false;
     }
 
-    if (_emailController.text.isEmpty ||
+    if (_adminLastNameController.text.trim().isEmpty) {
+      _showErrorSnackBar('Please enter your last name');
+      return false;
+    }
+
+    if (_adminEmailController.text.trim().isEmpty ||
         !RegExp(
           r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$',
-        ).hasMatch(_emailController.text)) {
-      _showErrorSnackbar('Please enter a valid email address');
+        ).hasMatch(_adminEmailController.text.trim())) {
+      _showErrorSnackBar('Please enter a valid email address');
       return false;
     }
 
-    if (_passwordController.text.isEmpty ||
-        _passwordController.text.length < 6) {
-      _showErrorSnackbar('Password must be at least 6 characters');
+    if (_adminPasswordController.text.isEmpty ||
+        _adminPasswordController.text.length < 6) {
+      _showErrorSnackBar('Password must be at least 6 characters long');
       return false;
     }
 
-    if (_passwordController.text != _confirmPasswordController.text) {
-      _showErrorSnackbar('Passwords do not match');
+    if (_adminPasswordController.text != _adminConfirmPasswordController.text) {
+      _showErrorSnackBar('Passwords do not match');
       return false;
     }
 
@@ -156,43 +160,33 @@ class _SignupPageState extends State<SignupPage> {
   }
 
   bool _validateCompanyInfo() {
-    // Validate company info fields
-    if (_companyNameController.text.isEmpty) {
-      _showErrorSnackbar('Please enter your company name');
+    // Validate company information
+    if (_companyNameController.text.trim().isEmpty) {
+      _showErrorSnackBar('Please enter your company name');
       return false;
     }
 
-    if (_companyEmailController.text.isEmpty ||
+    if (_companyEmailController.text.trim().isEmpty ||
         !RegExp(
           r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$',
-        ).hasMatch(_companyEmailController.text)) {
-      _showErrorSnackbar('Please enter a valid company email address');
+        ).hasMatch(_companyEmailController.text.trim())) {
+      _showErrorSnackBar('Please enter a valid company email address');
       return false;
     }
 
     return true;
   }
 
-  void _showErrorSnackbar(String message) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message),
-        backgroundColor: Colors.red[700],
-        behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-      ),
-    );
-  }
-
-  void _handleSignup() async {
-    // Validate company information
+  void _handleRegistration() async {
+    // Final validation
     if (!_validateCompanyInfo()) {
       return;
     }
 
-    // Validate terms agreement
     if (!_agreeToTerms) {
-      _showErrorSnackbar('You must agree to the Terms of Service');
+      _showErrorSnackBar(
+        'You must agree to the Terms of Service and Privacy Policy',
+      );
       return;
     }
 
@@ -201,73 +195,101 @@ class _SignupPageState extends State<SignupPage> {
     });
 
     try {
-      // Get database and auth services
-      final databaseService = Provider.of<DatabaseService>(
+      final firebaseAuthService = Provider.of<FirebaseAuthService>(
         context,
         listen: false,
       );
-      final authService = AuthService();
 
       // Create company object
       final company = Company(
-        id: '', // Will be set by the database service
-        name: _companyNameController.text,
-        email: _companyEmailController.text,
-        phone: _companyPhoneController.text,
-        address: _companyAddressController.text,
-        city: _companyCityController.text,
-        state: _companyStateController.text,
-        zipcode: _companyZipController.text,
-        website: _companyWebsiteController.text,
+        id: '', // Will be generated by the service
+        name: _companyNameController.text.trim(),
+        email: _companyEmailController.text.trim(),
+        phone: _companyPhoneController.text.trim(),
+        address: _companyAddressController.text.trim(),
+        city: _companyCityController.text.trim(),
+        state: _companyStateController.text.trim(),
+        zipcode: _companyZipController.text.trim(),
+        website: _companyWebsiteController.text.trim(),
         size: _companySize,
         industry: _industryType,
         createdAt: DateTime.now().toIso8601String(),
       );
 
-      // Register the company and admin user
-      // Note: we're now using ROLE_COMPANY_ADMIN constant for the admin role
-      final success = await authService.registerCompanyAndAdmin(
+      // Register company with admin
+      final success = await firebaseAuthService.registerCompanyWithAdmin(
         company: company,
-        adminName: _nameController.text,
-        adminEmail: _emailController.text,
-        adminPassword: _passwordController.text,
-        adminRole:
-            AuthService.ROLE_COMPANY_ADMIN, // Always register as Company Admin
-        adminPhone: _phoneController.text,
-        enableNotifications: _enableNotifications,
+        adminName:
+            '${_adminFirstNameController.text.trim()} ${_adminLastNameController.text.trim()}',
+        adminEmail: _adminEmailController.text.trim(),
+        adminPassword: _adminPasswordController.text,
+        adminPhone: _adminPhoneController.text.trim(),
       );
 
       if (success) {
-        // Log activity
-        await databaseService.logActivity(
-          'New company registered: ${_companyNameController.text}',
-          'Account Management',
-        );
-
-        // Navigate to login page
-        Navigator.pushReplacementNamed(context, '/login');
-
         // Show success message
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: const Text('Registration successful! Please log in.'),
+            content: const Text(
+              'Registration successful! You can now sign in.',
+            ),
             backgroundColor: Colors.green[700],
             behavior: SnackBarBehavior.floating,
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(10),
             ),
+            duration: const Duration(seconds: 5),
           ),
         );
+
+        // Navigate to login page
+        Navigator.of(context).pushReplacementNamed('/login');
+
+        // Log successful registration
+        final logsService = Provider.of<FirebaseLogsService>(
+          context,
+          listen: false,
+        );
+        await logsService.logActivity(
+          description: 'Company registration completed: ${company.name}',
+          type: FirebaseLogsService.TYPE_ACCOUNT_MANAGEMENT,
+        );
       } else {
-        _showErrorSnackbar('Registration failed. Email may already be in use.');
+        _showErrorSnackBar('Registration failed. Please try again.');
       }
     } catch (e) {
-      _showErrorSnackbar('Error during registration: ${e.toString()}');
+      String errorMessage = e.toString();
+
+      // Handle Firebase Auth specific errors
+      if (errorMessage.contains('email-already-in-use')) {
+        errorMessage = 'An account with this email address already exists.';
+      } else if (errorMessage.contains('weak-password')) {
+        errorMessage =
+            'The password is too weak. Please choose a stronger password.';
+      } else if (errorMessage.contains('invalid-email')) {
+        errorMessage = 'Please enter a valid email address.';
+      }
+
+      _showErrorSnackBar(errorMessage);
     } finally {
-      setState(() {
-        _isLoading = false;
-      });
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
     }
+  }
+
+  void _showErrorSnackBar(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: Colors.red[700],
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+        duration: const Duration(seconds: 4),
+      ),
+    );
   }
 
   @override
@@ -282,7 +304,7 @@ class _SignupPageState extends State<SignupPage> {
         elevation: 0,
         iconTheme: IconThemeData(color: AppTheme.primaryColor),
         title: Text(
-          'Register your company',
+          'Register Your Company',
           style: TextStyle(
             color: AppTheme.primaryColor,
             fontWeight: FontWeight.bold,
@@ -300,7 +322,7 @@ class _SignupPageState extends State<SignupPage> {
                   gradient: LinearGradient(
                     begin: Alignment.topCenter,
                     end: Alignment.bottomCenter,
-                    colors: [Colors.blue[700]!, Colors.blue[900]!],
+                    colors: [AppTheme.primaryColor, AppTheme.primaryDarkColor],
                   ),
                 ),
                 child: Column(
@@ -314,15 +336,15 @@ class _SignupPageState extends State<SignupPage> {
                         shape: BoxShape.circle,
                       ),
                       child: Icon(
-                        Icons.account_balance_wallet,
+                        Icons.business,
                         size: 60,
-                        color: Colors.blue[700],
+                        color: AppTheme.primaryColor,
                       ),
                     ),
                     const SizedBox(height: 24),
-                    Text(
-                      'Budget Management',
-                      style: const TextStyle(
+                    const Text(
+                      'Company Registration',
+                      style: TextStyle(
                         color: Colors.white,
                         fontSize: 24,
                         fontWeight: FontWeight.bold,
@@ -333,22 +355,29 @@ class _SignupPageState extends State<SignupPage> {
                     Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 24),
                       child: Text(
-                        'Complete the registration to gain access to our platform',
-                        style: TextStyle(color: Colors.blue[100], fontSize: 14),
+                        'Register your company and create your administrator account',
+                        style: TextStyle(
+                          color: AppTheme.primaryLightColor,
+                          fontSize: 14,
+                        ),
                         textAlign: TextAlign.center,
                       ),
                     ),
                     const SizedBox(height: 48),
                     // Steps
-                    _buildStepItem(0, 'Admin Information'),
-                    _buildStepItem(1, 'Company Details'),
+                    _buildStepItem(0, 'Administrator Details'),
+                    _buildStepItem(1, 'Company Information'),
                     _buildStepItem(2, 'Review & Confirm'),
                     const Spacer(),
                     Padding(
                       padding: const EdgeInsets.all(24),
                       child: Text(
                         'Need help? Contact support@budgetapp.com',
-                        style: TextStyle(color: Colors.blue[100], fontSize: 12),
+                        style: TextStyle(
+                          color: AppTheme.primaryLightColor,
+                          fontSize: 12,
+                        ),
+                        textAlign: TextAlign.center,
                       ),
                     ),
                   ],
@@ -373,90 +402,22 @@ class _SignupPageState extends State<SignupPage> {
 
                     // Form pages
                     Expanded(
-                      child: PageView(
-                        controller: _pageController,
-                        physics: const NeverScrollableScrollPhysics(),
-                        children: [
-                          _buildAdminInfoForm(),
-                          _buildCompanyInfoForm(),
-                          _buildReviewPage(),
-                        ],
+                      child: Form(
+                        key: _formKey,
+                        child: PageView(
+                          controller: _pageController,
+                          physics: const NeverScrollableScrollPhysics(),
+                          children: [
+                            _buildAdminInfoForm(),
+                            _buildCompanyInfoForm(),
+                            _buildReviewPage(),
+                          ],
+                        ),
                       ),
                     ),
 
-                    // Bottom navigation buttons
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        if (_currentStep > 0)
-                          OutlinedButton(
-                            onPressed: _isLoading ? null : _previousStep,
-                            style: OutlinedButton.styleFrom(
-                              foregroundColor: Colors.blue[700],
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 24,
-                                vertical: 12,
-                              ),
-                              side: BorderSide(color: Colors.blue[300]!),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(8),
-                              ),
-                            ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                const Icon(Icons.arrow_back, size: 16),
-                                const SizedBox(width: 8),
-                                const Text('Previous'),
-                              ],
-                            ),
-                          )
-                        else
-                          const SizedBox(), // Empty widget for spacing
-
-                        ElevatedButton(
-                          onPressed: _isLoading ? null : _nextStep,
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.blue[700],
-                            foregroundColor: Colors.white,
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 24,
-                              vertical: 12,
-                            ),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            disabledBackgroundColor: Colors.blue[300],
-                          ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Text(
-                                _currentStep < 2
-                                    ? 'Next'
-                                    : 'Complete Registration',
-                              ),
-                              const SizedBox(width: 8),
-                              _isLoading
-                                  ? const SizedBox(
-                                    width: 16,
-                                    height: 16,
-                                    child: CircularProgressIndicator(
-                                      color: Colors.white,
-                                      strokeWidth: 2,
-                                    ),
-                                  )
-                                  : Icon(
-                                    _currentStep < 2
-                                        ? Icons.arrow_forward
-                                        : Icons.check_circle,
-                                    size: 16,
-                                  ),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
+                    // Navigation buttons
+                    _buildNavigationButtons(),
                   ],
                 ),
               ),
@@ -489,11 +450,16 @@ class _SignupPageState extends State<SignupPage> {
             child: Center(
               child:
                   isCompleted
-                      ? Icon(Icons.check, color: Colors.blue[700], size: 16)
+                      ? Icon(
+                        Icons.check,
+                        color: AppTheme.primaryColor,
+                        size: 16,
+                      )
                       : Text(
                         '${step + 1}',
                         style: TextStyle(
-                          color: isActive ? Colors.blue[700] : Colors.white,
+                          color:
+                              isActive ? AppTheme.primaryColor : Colors.white,
                           fontWeight: FontWeight.bold,
                         ),
                       ),
@@ -521,14 +487,14 @@ class _SignupPageState extends State<SignupPage> {
       children: [
         Text(
           [
-            'Admin Information',
-            'Company Details',
+            'Administrator Details',
+            'Company Information',
             'Review & Confirm',
           ][_currentStep],
           style: TextStyle(
             fontSize: 24,
             fontWeight: FontWeight.bold,
-            color: Colors.blue[800],
+            color: AppTheme.primaryColor,
           ),
         ),
         const SizedBox(height: 8),
@@ -540,9 +506,8 @@ class _SignupPageState extends State<SignupPage> {
         LinearProgressIndicator(
           value: (_currentStep + 1) / 3,
           backgroundColor: Colors.grey[200],
-          color: Colors.blue[700],
+          color: AppTheme.primaryColor,
           minHeight: 6,
-          borderRadius: BorderRadius.circular(3),
         ),
       ],
     );
@@ -550,98 +515,122 @@ class _SignupPageState extends State<SignupPage> {
 
   Widget _buildAdminInfoForm() {
     return SingleChildScrollView(
-      controller: _scrollController,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           if (MediaQuery.of(context).size.width > 800) ...[
             Text(
-              'Admin Information',
+              'Administrator Information',
               style: TextStyle(
                 fontSize: 24,
                 fontWeight: FontWeight.bold,
-                color: Colors.blue[800],
+                color: AppTheme.primaryColor,
               ),
             ),
             const SizedBox(height: 8),
             Text(
-              'Please provide details for the main administrator account',
+              'Create the main administrator account for your company',
               style: TextStyle(fontSize: 16, color: Colors.grey[600]),
             ),
             const SizedBox(height: 32),
           ],
 
-          // Full Name
-          TextField(
-            controller: _nameController,
-            decoration: InputDecoration(
-              labelText: 'Full Name',
-              hintText: 'Enter your full name',
-              prefixIcon: const Icon(Icons.person),
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(10),
-              ),
+          // First Name
+          TextFormField(
+            controller: _adminFirstNameController,
+            decoration: const InputDecoration(
+              labelText: 'First Name',
+              hintText: 'Enter your first name',
+              prefixIcon: Icon(Icons.person),
             ),
+            validator: (value) {
+              if (value == null || value.trim().isEmpty) {
+                return 'Please enter your first name';
+              }
+              return null;
+            },
+          ),
+          const SizedBox(height: 16),
+
+          // Last Name
+          TextFormField(
+            controller: _adminLastNameController,
+            decoration: const InputDecoration(
+              labelText: 'Last Name',
+              hintText: 'Enter your last name',
+              prefixIcon: Icon(Icons.person),
+            ),
+            validator: (value) {
+              if (value == null || value.trim().isEmpty) {
+                return 'Please enter your last name';
+              }
+              return null;
+            },
           ),
           const SizedBox(height: 16),
 
           // Email
-          TextField(
-            controller: _emailController,
+          TextFormField(
+            controller: _adminEmailController,
             keyboardType: TextInputType.emailAddress,
-            decoration: InputDecoration(
+            decoration: const InputDecoration(
               labelText: 'Email Address',
               hintText: 'Enter your email address',
-              prefixIcon: const Icon(Icons.email),
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(10),
-              ),
+              prefixIcon: Icon(Icons.email),
             ),
+            validator: (value) {
+              if (value == null || value.trim().isEmpty) {
+                return 'Please enter your email address';
+              }
+              if (!RegExp(
+                r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$',
+              ).hasMatch(value.trim())) {
+                return 'Please enter a valid email address';
+              }
+              return null;
+            },
           ),
           const SizedBox(height: 16),
 
-          // Phone
-          TextField(
-            controller: _phoneController,
+          // Phone (optional)
+          TextFormField(
+            controller: _adminPhoneController,
             keyboardType: TextInputType.phone,
-            decoration: InputDecoration(
+            decoration: const InputDecoration(
               labelText: 'Phone Number (Optional)',
               hintText: 'Enter your phone number',
-              prefixIcon: const Icon(Icons.phone),
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(10),
-              ),
+              prefixIcon: Icon(Icons.phone),
             ),
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 24),
 
-          // Display the role as read-only information
+          // Role information
           Container(
-            padding: const EdgeInsets.all(12),
+            padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
-              color: Colors.blue[50],
+              color: AppTheme.primaryLightColor.withOpacity(0.1),
               borderRadius: BorderRadius.circular(10),
-              border: Border.all(color: Colors.blue[200]!),
+              border: Border.all(color: AppTheme.primaryColor.withOpacity(0.3)),
             ),
             child: Row(
               children: [
-                Icon(Icons.admin_panel_settings, color: Colors.blue[700]),
+                Icon(Icons.admin_panel_settings, color: AppTheme.primaryColor),
                 const SizedBox(width: 12),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        'Administrator Role',
+                        'Administrator Account',
                         style: TextStyle(
                           fontWeight: FontWeight.bold,
-                          color: Colors.blue[800],
+                          color: AppTheme.primaryColor,
                         ),
                       ),
                       const SizedBox(height: 4),
                       Text(
-                        'Your account will be created with full administrator privileges',
-                        style: TextStyle(color: Colors.blue[800]),
+                        'Your account will have full administrative privileges to manage your company\'s budget system',
+                        style: TextStyle(color: AppTheme.primaryColor),
                       ),
                     ],
                   ),
@@ -652,12 +641,12 @@ class _SignupPageState extends State<SignupPage> {
           const SizedBox(height: 24),
 
           // Password
-          TextField(
-            controller: _passwordController,
+          TextFormField(
+            controller: _adminPasswordController,
             obscureText: _obscurePassword,
             decoration: InputDecoration(
               labelText: 'Password',
-              hintText: 'Create a password',
+              hintText: 'Create a secure password',
               prefixIcon: const Icon(Icons.lock),
               suffixIcon: IconButton(
                 icon: Icon(
@@ -669,55 +658,55 @@ class _SignupPageState extends State<SignupPage> {
                   });
                 },
               ),
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(10),
-              ),
             ),
+            validator: (value) {
+              if (value == null || value.isEmpty) {
+                return 'Please enter a password';
+              }
+              if (value.length < 6) {
+                return 'Password must be at least 6 characters long';
+              }
+              return null;
+            },
           ),
           const SizedBox(height: 8),
           Text(
-            'Password must be at least 6 characters',
+            'Password must be at least 6 characters long',
             style: TextStyle(fontSize: 12, color: Colors.grey[600]),
           ),
           const SizedBox(height: 16),
 
           // Confirm Password
-          TextField(
-            controller: _confirmPasswordController,
-            obscureText: _obscurePassword,
+          TextFormField(
+            controller: _adminConfirmPasswordController,
+            obscureText: _obscureConfirmPassword,
             decoration: InputDecoration(
               labelText: 'Confirm Password',
               hintText: 'Confirm your password',
               prefixIcon: const Icon(Icons.lock_outline),
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(10),
-              ),
-            ),
-          ),
-          const SizedBox(height: 24),
-
-          // Notifications toggle
-          Row(
-            children: [
-              Switch(
-                value: _enableNotifications,
-                onChanged: (value) {
+              suffixIcon: IconButton(
+                icon: Icon(
+                  _obscureConfirmPassword
+                      ? Icons.visibility_off
+                      : Icons.visibility,
+                ),
+                onPressed: () {
                   setState(() {
-                    _enableNotifications = value;
+                    _obscureConfirmPassword = !_obscureConfirmPassword;
                   });
                 },
-                activeColor: Colors.blue[700],
               ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  'Receive notifications about budget updates and account activities',
-                  style: TextStyle(fontSize: 14, color: Colors.grey[700]),
-                ),
-              ),
-            ],
+            ),
+            validator: (value) {
+              if (value == null || value.isEmpty) {
+                return 'Please confirm your password';
+              }
+              if (value != _adminPasswordController.text) {
+                return 'Passwords do not match';
+              }
+              return null;
+            },
           ),
-          const SizedBox(height: 16),
         ],
       ),
     );
@@ -725,87 +714,91 @@ class _SignupPageState extends State<SignupPage> {
 
   Widget _buildCompanyInfoForm() {
     return SingleChildScrollView(
-      controller: _scrollController,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           if (MediaQuery.of(context).size.width > 800) ...[
             Text(
-              'Company Details',
+              'Company Information',
               style: TextStyle(
                 fontSize: 24,
                 fontWeight: FontWeight.bold,
-                color: Colors.blue[800],
+                color: AppTheme.primaryColor,
               ),
             ),
             const SizedBox(height: 8),
             Text(
-              'Please provide information about your company',
+              'Provide details about your company',
               style: TextStyle(fontSize: 16, color: Colors.grey[600]),
             ),
             const SizedBox(height: 32),
           ],
 
           // Company Name
-          TextField(
+          TextFormField(
             controller: _companyNameController,
-            decoration: InputDecoration(
+            decoration: const InputDecoration(
               labelText: 'Company Name',
               hintText: 'Enter your company name',
-              prefixIcon: const Icon(Icons.business),
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(10),
-              ),
+              prefixIcon: Icon(Icons.business),
             ),
+            validator: (value) {
+              if (value == null || value.trim().isEmpty) {
+                return 'Please enter your company name';
+              }
+              return null;
+            },
           ),
           const SizedBox(height: 16),
 
           // Company Email
-          TextField(
+          TextFormField(
             controller: _companyEmailController,
             keyboardType: TextInputType.emailAddress,
-            decoration: InputDecoration(
+            decoration: const InputDecoration(
               labelText: 'Company Email',
               hintText: 'Enter company email address',
-              prefixIcon: const Icon(Icons.email_outlined),
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(10),
-              ),
+              prefixIcon: Icon(Icons.email_outlined),
             ),
+            validator: (value) {
+              if (value == null || value.trim().isEmpty) {
+                return 'Please enter company email address';
+              }
+              if (!RegExp(
+                r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$',
+              ).hasMatch(value.trim())) {
+                return 'Please enter a valid email address';
+              }
+              return null;
+            },
           ),
           const SizedBox(height: 16),
 
           // Company Phone
-          TextField(
+          TextFormField(
             controller: _companyPhoneController,
             keyboardType: TextInputType.phone,
-            decoration: InputDecoration(
+            decoration: const InputDecoration(
               labelText: 'Company Phone',
               hintText: 'Enter company phone number',
-              prefixIcon: const Icon(Icons.phone_outlined),
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(10),
-              ),
+              prefixIcon: Icon(Icons.phone_outlined),
             ),
           ),
           const SizedBox(height: 16),
 
-          // Company Website
-          TextField(
+          // Website (optional)
+          TextFormField(
             controller: _companyWebsiteController,
             keyboardType: TextInputType.url,
-            decoration: InputDecoration(
+            decoration: const InputDecoration(
               labelText: 'Company Website (Optional)',
               hintText: 'Enter company website',
-              prefixIcon: const Icon(Icons.language),
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(10),
-              ),
+              prefixIcon: Icon(Icons.language),
             ),
           ),
           const SizedBox(height: 24),
 
-          // Address
+          // Address Section
           Text(
             'Company Address',
             style: TextStyle(
@@ -817,61 +810,48 @@ class _SignupPageState extends State<SignupPage> {
           const SizedBox(height: 12),
 
           // Street Address
-          TextField(
+          TextFormField(
             controller: _companyAddressController,
-            decoration: InputDecoration(
+            decoration: const InputDecoration(
               labelText: 'Street Address',
               hintText: 'Enter street address',
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(10),
-              ),
             ),
           ),
           const SizedBox(height: 16),
 
-          // City, State, Zip in a row for wider screens, stacked for mobile
+          // City, State, Zip
           LayoutBuilder(
             builder: (context, constraints) {
               if (constraints.maxWidth > 600) {
                 return Row(
                   children: [
                     Expanded(
-                      child: TextField(
+                      child: TextFormField(
                         controller: _companyCityController,
-                        decoration: InputDecoration(
+                        decoration: const InputDecoration(
                           labelText: 'City',
                           hintText: 'Enter city',
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(10),
-                          ),
                         ),
                       ),
                     ),
                     const SizedBox(width: 12),
                     Expanded(
-                      child: TextField(
+                      child: TextFormField(
                         controller: _companyStateController,
-                        decoration: InputDecoration(
+                        decoration: const InputDecoration(
                           labelText: 'State/Province',
                           hintText: 'Enter state',
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(10),
-                          ),
                         ),
                       ),
                     ),
                     const SizedBox(width: 12),
                     SizedBox(
                       width: 120,
-                      child: TextField(
+                      child: TextFormField(
                         controller: _companyZipController,
-                        keyboardType: TextInputType.number,
-                        decoration: InputDecoration(
+                        decoration: const InputDecoration(
                           labelText: 'Zip/Postal',
                           hintText: 'Enter zip',
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(10),
-                          ),
                         ),
                       ),
                     ),
@@ -880,37 +860,27 @@ class _SignupPageState extends State<SignupPage> {
               } else {
                 return Column(
                   children: [
-                    TextField(
+                    TextFormField(
                       controller: _companyCityController,
-                      decoration: InputDecoration(
+                      decoration: const InputDecoration(
                         labelText: 'City',
                         hintText: 'Enter city',
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(10),
-                        ),
                       ),
                     ),
                     const SizedBox(height: 16),
-                    TextField(
+                    TextFormField(
                       controller: _companyStateController,
-                      decoration: InputDecoration(
+                      decoration: const InputDecoration(
                         labelText: 'State/Province',
                         hintText: 'Enter state',
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(10),
-                        ),
                       ),
                     ),
                     const SizedBox(height: 16),
-                    TextField(
+                    TextFormField(
                       controller: _companyZipController,
-                      keyboardType: TextInputType.number,
-                      decoration: InputDecoration(
+                      decoration: const InputDecoration(
                         labelText: 'Zip/Postal',
                         hintText: 'Enter zip',
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(10),
-                        ),
                       ),
                     ),
                   ],
@@ -920,9 +890,9 @@ class _SignupPageState extends State<SignupPage> {
           ),
           const SizedBox(height: 24),
 
-          // Company Size and Industry
+          // Company Details Section
           Text(
-            'Company Information',
+            'Company Details',
             style: TextStyle(
               fontSize: 16,
               fontWeight: FontWeight.bold,
@@ -931,69 +901,52 @@ class _SignupPageState extends State<SignupPage> {
           ),
           const SizedBox(height: 12),
 
-          // Company Size dropdown
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12),
-            decoration: BoxDecoration(
-              border: Border.all(color: Colors.grey[300]!),
-              borderRadius: BorderRadius.circular(10),
+          // Company Size
+          DropdownButtonFormField<String>(
+            decoration: const InputDecoration(
+              labelText: 'Company Size',
+              prefixIcon: Icon(Icons.people),
             ),
-            child: DropdownButtonHideUnderline(
-              child: DropdownButton<String>(
-                value: _companySize,
-                isExpanded: true,
-                hint: const Text('Select company size'),
-                icon: const Icon(Icons.arrow_drop_down),
-                items:
-                    _companySizes.map((String size) {
-                      return DropdownMenuItem<String>(
-                        value: size,
-                        child: Text(size),
-                      );
-                    }).toList(),
-                onChanged: (String? newValue) {
-                  if (newValue != null) {
-                    setState(() {
-                      _companySize = newValue;
-                    });
-                  }
-                },
-              ),
-            ),
+            value: _companySize,
+            items:
+                _companySizes.map((size) {
+                  return DropdownMenuItem<String>(
+                    value: size,
+                    child: Text(size),
+                  );
+                }).toList(),
+            onChanged: (value) {
+              if (value != null) {
+                setState(() {
+                  _companySize = value;
+                });
+              }
+            },
           ),
           const SizedBox(height: 16),
 
-          // Industry dropdown
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12),
-            decoration: BoxDecoration(
-              border: Border.all(color: Colors.grey[300]!),
-              borderRadius: BorderRadius.circular(10),
+          // Industry Type
+          DropdownButtonFormField<String>(
+            decoration: const InputDecoration(
+              labelText: 'Industry',
+              prefixIcon: Icon(Icons.domain),
             ),
-            child: DropdownButtonHideUnderline(
-              child: DropdownButton<String>(
-                value: _industryType,
-                isExpanded: true,
-                hint: const Text('Select industry'),
-                icon: const Icon(Icons.arrow_drop_down),
-                items:
-                    _industryTypes.map((String industry) {
-                      return DropdownMenuItem<String>(
-                        value: industry,
-                        child: Text(industry),
-                      );
-                    }).toList(),
-                onChanged: (String? newValue) {
-                  if (newValue != null) {
-                    setState(() {
-                      _industryType = newValue;
-                    });
-                  }
-                },
-              ),
-            ),
+            value: _industryType,
+            items:
+                _industryTypes.map((industry) {
+                  return DropdownMenuItem<String>(
+                    value: industry,
+                    child: Text(industry),
+                  );
+                }).toList(),
+            onChanged: (value) {
+              if (value != null) {
+                setState(() {
+                  _industryType = value;
+                });
+              }
+            },
           ),
-          const SizedBox(height: 16),
         ],
       ),
     );
@@ -1001,7 +954,6 @@ class _SignupPageState extends State<SignupPage> {
 
   Widget _buildReviewPage() {
     return SingleChildScrollView(
-      controller: _scrollController,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -1011,7 +963,7 @@ class _SignupPageState extends State<SignupPage> {
               style: TextStyle(
                 fontSize: 24,
                 fontWeight: FontWeight.bold,
-                color: Colors.blue[800],
+                color: AppTheme.primaryColor,
               ),
             ),
             const SizedBox(height: 8),
@@ -1022,122 +974,71 @@ class _SignupPageState extends State<SignupPage> {
             const SizedBox(height: 32),
           ],
 
-          // Admin Information Card
-          Card(
-            elevation: 1,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Icon(Icons.person, color: Colors.blue[700]),
-                      const SizedBox(width: 8),
-                      Text(
-                        'Admin Information',
-                        style: TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.blue[800],
-                        ),
-                      ),
-                      const Spacer(),
-                      TextButton(
-                        onPressed: () {
-                          setState(() {
-                            _currentStep = 0;
-                          });
-                          _pageController.animateToPage(
-                            0,
-                            duration: const Duration(milliseconds: 300),
-                            curve: Curves.easeInOut,
-                          );
-                        },
-                        child: const Text('Edit'),
-                      ),
-                    ],
-                  ),
-                  const Divider(),
-                  _buildReviewItem('Name', _nameController.text),
-                  _buildReviewItem('Email', _emailController.text),
-                  _buildReviewItem(
-                    'Phone',
-                    _phoneController.text.isEmpty
-                        ? 'Not provided'
-                        : _phoneController.text,
-                  ),
-                  _buildReviewItem('Role', 'Company Admin'), // Fixed role
-                ],
+          // Administrator Information Card
+          _buildInfoCard(
+            title: 'Administrator Information',
+            icon: Icons.person,
+            onEdit: () {
+              setState(() {
+                _currentStep = 0;
+              });
+              _pageController.animateToPage(
+                0,
+                duration: const Duration(milliseconds: 300),
+                curve: Curves.easeInOut,
+              );
+            },
+            children: [
+              _buildReviewItem('First Name', _adminFirstNameController.text),
+              _buildReviewItem('Last Name', _adminLastNameController.text),
+              _buildReviewItem('Email', _adminEmailController.text),
+              _buildReviewItem(
+                'Phone',
+                _adminPhoneController.text.isEmpty
+                    ? 'Not provided'
+                    : _adminPhoneController.text,
               ),
-            ),
-          ), 
+              _buildReviewItem('Role', 'Administrator'),
+            ],
+          ),
+
           const SizedBox(height: 16),
 
           // Company Information Card
-          Card(
-            elevation: 1,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Icon(Icons.business, color: Colors.blue[700]),
-                      const SizedBox(width: 8),
-                      Text(
-                        'Company Information',
-                        style: TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.blue[800],
-                        ),
-                      ),
-                      const Spacer(),
-                      TextButton(
-                        onPressed: () {
-                          setState(() {
-                            _currentStep = 1;
-                          });
-                          _pageController.animateToPage(
-                            1,
-                            duration: const Duration(milliseconds: 300),
-                            curve: Curves.easeInOut,
-                          );
-                        },
-                        child: const Text('Edit'),
-                      ),
-                    ],
-                  ),
-                  const Divider(),
-                  _buildReviewItem('Company Name', _companyNameController.text),
-                  _buildReviewItem('Email', _companyEmailController.text),
-                  _buildReviewItem(
-                    'Phone',
-                    _companyPhoneController.text.isEmpty
-                        ? 'Not provided'
-                        : _companyPhoneController.text,
-                  ),
-                  _buildReviewItem(
-                    'Website',
-                    _companyWebsiteController.text.isEmpty
-                        ? 'Not provided'
-                        : _companyWebsiteController.text,
-                  ),
-                  _buildReviewItem('Address', _formatAddress()),
-                  _buildReviewItem('Company Size', _companySize),
-                  _buildReviewItem('Industry', _industryType),
-                ],
+          _buildInfoCard(
+            title: 'Company Information',
+            icon: Icons.business,
+            onEdit: () {
+              setState(() {
+                _currentStep = 1;
+              });
+              _pageController.animateToPage(
+                1,
+                duration: const Duration(milliseconds: 300),
+                curve: Curves.easeInOut,
+              );
+            },
+            children: [
+              _buildReviewItem('Company Name', _companyNameController.text),
+              _buildReviewItem('Email', _companyEmailController.text),
+              _buildReviewItem(
+                'Phone',
+                _companyPhoneController.text.isEmpty
+                    ? 'Not provided'
+                    : _companyPhoneController.text,
               ),
-            ),
+              _buildReviewItem(
+                'Website',
+                _companyWebsiteController.text.isEmpty
+                    ? 'Not provided'
+                    : _companyWebsiteController.text,
+              ),
+              _buildReviewItem('Address', _formatAddress()),
+              _buildReviewItem('Company Size', _companySize),
+              _buildReviewItem('Industry', _industryType),
+            ],
           ),
+
           const SizedBox(height: 24),
 
           // Terms and Conditions
@@ -1151,7 +1052,7 @@ class _SignupPageState extends State<SignupPage> {
                     _agreeToTerms = value ?? false;
                   });
                 },
-                activeColor: Colors.blue[700],
+                activeColor: AppTheme.primaryColor,
               ),
               Expanded(
                 child: Padding(
@@ -1164,7 +1065,7 @@ class _SignupPageState extends State<SignupPage> {
                         TextSpan(
                           text: 'Terms of Service',
                           style: TextStyle(
-                            color: Colors.blue[700],
+                            color: AppTheme.primaryColor,
                             fontWeight: FontWeight.bold,
                             decoration: TextDecoration.underline,
                           ),
@@ -1173,7 +1074,7 @@ class _SignupPageState extends State<SignupPage> {
                         TextSpan(
                           text: 'Privacy Policy',
                           style: TextStyle(
-                            color: Colors.blue[700],
+                            color: AppTheme.primaryColor,
                             fontWeight: FontWeight.bold,
                             decoration: TextDecoration.underline,
                           ),
@@ -1185,8 +1086,45 @@ class _SignupPageState extends State<SignupPage> {
               ),
             ],
           ),
-          const SizedBox(height: 24),
         ],
+      ),
+    );
+  }
+
+  Widget _buildInfoCard({
+    required String title,
+    required IconData icon,
+    required VoidCallback onEdit,
+    required List<Widget> children,
+  }) {
+    return Card(
+      elevation: 1,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(icon, color: AppTheme.primaryColor),
+                const SizedBox(width: 8),
+                Text(
+                  title,
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                    color: AppTheme.primaryColor,
+                  ),
+                ),
+                const Spacer(),
+                TextButton(onPressed: onEdit, child: const Text('Edit')),
+              ],
+            ),
+            const Divider(),
+            ...children,
+          ],
+        ),
       ),
     );
   }
@@ -1246,5 +1184,68 @@ class _SignupPageState extends State<SignupPage> {
     }
 
     return parts.isEmpty ? 'Not provided' : parts.join('\n');
+  }
+
+  Widget _buildNavigationButtons() {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        if (_currentStep > 0)
+          OutlinedButton(
+            onPressed: _isLoading ? null : _previousStep,
+            style: OutlinedButton.styleFrom(
+              foregroundColor: AppTheme.primaryColor,
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+              side: BorderSide(color: AppTheme.primaryColor.withOpacity(0.5)),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8),
+              ),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.arrow_back, size: 16),
+                const SizedBox(width: 8),
+                const Text('Previous'),
+              ],
+            ),
+          )
+        else
+          const SizedBox(),
+
+        ElevatedButton(
+          onPressed: _isLoading ? null : _nextStep,
+          style: ElevatedButton.styleFrom(
+            backgroundColor: AppTheme.primaryColor,
+            foregroundColor: Colors.white,
+            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(8),
+            ),
+            disabledBackgroundColor: AppTheme.primaryColor.withOpacity(0.6),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(_currentStep < 2 ? 'Next' : 'Complete Registration'),
+              const SizedBox(width: 8),
+              _isLoading
+                  ? const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(
+                      color: Colors.white,
+                      strokeWidth: 2,
+                    ),
+                  )
+                  : Icon(
+                    _currentStep < 2 ? Icons.arrow_forward : Icons.check_circle,
+                    size: 16,
+                  ),
+            ],
+          ),
+        ),
+      ],
+    );
   }
 }
