@@ -170,10 +170,16 @@ class FirebaseAuthService {
         throw 'Only administrators can create accounts';
       }
 
+      // Store current user info for logging (before we get signed out)
+      final currentUserId = currentUserData['account_id'];
+      final currentUserEmail = currentUserData['email'];
+
       // Validate role (admin cannot create another admin)
       if (role == ROLE_ADMIN) {
         throw 'Cannot create another administrator account';
       }
+
+      print('Creating Firebase user for: $email'); // Debug log
 
       // Create Firebase user
       final UserCredential result = await _auth.createUserWithEmailAndPassword(
@@ -181,9 +187,9 @@ class FirebaseAuthService {
         password: password,
       );
 
-      String? newUserUid;
       if (result.user != null) {
-        newUserUid = result.user!.uid;
+        final newUserUid = result.user!.uid;
+        print('Firebase user created with UID: $newUserUid'); // Debug log
 
         // Create account document in Firestore for the new user
         await _firestore.collection('accounts').doc(newUserUid).set({
@@ -198,65 +204,51 @@ class FirebaseAuthService {
           'created_at': FieldValue.serverTimestamp(),
         });
 
+        print('Account document created in Firestore'); // Debug log
+
         // Sign out the newly created user
         await _auth.signOut();
+        print('New user signed out'); // Debug log
 
-        // Log activity - do this after signing out
-        await _firestore.collection('logs').add({
-          'log_id': UuidGenerator.generateUuid(),
-          'log_desc': 'New account created: $email with role: $role',
-          'type': 'Account Management',
-          'company_id': companyId,
-          'user_id': currentUserData['account_id'],
-          'created_at': FieldValue.serverTimestamp(),
-        });
+        // Log activity directly to Firestore (no user needs to be signed in)
+        try {
+          await _firestore.collection('logs').add({
+            'log_id': UuidGenerator.generateUuid(),
+            'log_desc':
+                'New account created: $email with role: $role by admin: $currentUserEmail',
+            'type': 'Account Management',
+            'company_id': companyId,
+            'user_id': currentUserId,
+            'created_at': FieldValue.serverTimestamp(),
+          });
+          print('Activity logged successfully'); // Debug log
+        } catch (logError) {
+          print('Warning: Could not log activity: $logError');
+        }
 
-        // Throw special error to trigger re-authentication dialog
-        throw 'ACCOUNT_CREATED_REAUTHENTICATE';
+        // Return true to indicate success
+        return true;
       }
-      return false;
+
+      throw 'Failed to create Firebase user account';
     } catch (e) {
-      print('Error creating user account: $e');
+      print('Error in createUserAccount: $e');
 
-      // If the error is our special re-authentication signal, don't treat it as an error
-      if (e.toString() == 'ACCOUNT_CREATED_REAUTHENTICATE') {
-        rethrow; // Re-throw to be handled by the UI
-      }
-
-      // If user was created but Firestore failed, delete the user
+      // Try to clean up if a user was created
       try {
         final currentAuthUser = _auth.currentUser;
         if (currentAuthUser != null && currentAuthUser.email == email) {
+          print('Cleaning up failed user account'); // Debug log
           await currentAuthUser.delete();
         }
       } catch (deleteError) {
-        print('Error deleting failed user account: $deleteError');
+        print('Warning: Could not delete failed user account: $deleteError');
       }
-      throw e;
+
+      rethrow; // Re-throw the original error
     }
   }
 
-  // NEW: Method to re-authenticate admin after creating an account
-  Future<bool> reauthenticateAdmin(String email, String password) async {
-    try {
-      final UserCredential result = await _auth.signInWithEmailAndPassword(
-        email: email,
-        password: password,
-      );
-
-      if (result.user != null) {
-        // Verify this is actually an admin
-        final userData = await currentUser;
-        if (userData != null && userData['role'] == ROLE_ADMIN) {
-          return true;
-        }
-      }
-      return false;
-    } catch (e) {
-      print('Error re-authenticating admin: $e');
-      throw e;
-    }
-  }
 
   // Update user account status
   Future<bool> updateUserStatus(String accountId, String status) async {

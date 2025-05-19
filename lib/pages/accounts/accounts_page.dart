@@ -632,11 +632,10 @@ class _CreateAccountDialogState extends State<_CreateAccountDialog> {
         listen: false,
       );
       final userData = await authService.currentUser;
-      print('Admin user data: $userData'); // Debug log
 
       if (userData != null) {
         final companyId = userData['company_id'];
-        final adminEmail = userData['email'];
+
         print('Creating account with company_id: $companyId'); // Debug log
 
         // Create the account
@@ -651,17 +650,14 @@ class _CreateAccountDialogState extends State<_CreateAccountDialog> {
         );
 
         if (success) {
-          // Account created successfully, admin was signed out
           if (mounted) {
+            print('Account created successfully'); // Debug log
+
             // Close the create account dialog
             Navigator.pop(context);
 
-            // Show re-authentication dialog
-            WidgetsBinding.instance.addPostFrameCallback((_) {
-              if (context.mounted) {
-                _showReauthenticationDialog(adminEmail);
-              }
-            });
+            // Show success message with auto-redirect
+            _showAccountCreatedDialog();
           }
         } else {
           // Account creation failed
@@ -698,254 +694,263 @@ class _CreateAccountDialogState extends State<_CreateAccountDialog> {
     }
   }
 
+  // Add this new method to handle the case where we can't get admin email
+  void _showAccountCreatedDialog() {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder:
+          (BuildContext dialogContext) => AlertDialog(
+            title: Row(
+              children: [
+                Icon(Icons.check_circle, color: Colors.green, size: 28),
+                const SizedBox(width: 12),
+                Text(
+                  'Account Created Successfully!',
+                  style: TextStyle(color: AppTheme.primaryColor),
+                ),
+              ],
+            ),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.green[50],
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.green[200]!),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(Icons.info_outline, color: Colors.green[700]),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'The new account has been created and added to your company successfully!',
+                          style: TextStyle(
+                            color: Colors.green[700],
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 16),
+                const Text(
+                  'Due to security requirements, you have been signed out and need to log back in to continue.',
+                  style: TextStyle(fontSize: 14),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  'You will be redirected to the login page in 3 seconds...',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: AppTheme.textSecondary,
+                    fontStyle: FontStyle.italic,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+              ],
+            ),
+            actions: [
+              ElevatedButton(
+                onPressed: () {
+                  // Navigate to login page immediately
+                  Navigator.of(
+                    context,
+                  ).pushNamedAndRemoveUntil('/login', (route) => false);
+                },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppTheme.primaryColor,
+                  foregroundColor: Colors.white,
+                ),
+                child: const Text('Go to Login Now'),
+              ),
+            ],
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+            ),
+          ),
+    );
+
+    // Auto-redirect after 3 seconds
+    Future.delayed(const Duration(seconds: 3), () {
+      if (mounted && Navigator.canPop(context)) {
+        Navigator.of(
+          context,
+        ).pushNamedAndRemoveUntil('/login', (route) => false);
+      }
+    });
+  }
+
   // Show re-authentication dialog
   void _showReauthenticationDialog(String adminEmail) {
     final passwordController = TextEditingController();
-    bool obscurePassword = true;
-    bool isLoading = false;
 
     showDialog(
       context: context,
       barrierDismissible: false, // Prevent dismissing without re-authentication
       builder:
           (BuildContext dialogContext) => StatefulBuilder(
-            builder:
-                (context, setDialogState) => AlertDialog(
-                  title: Row(
+            builder: (context, setDialogState) {
+              bool obscurePassword = true;
+              bool isLoading = false;
+
+              return AlertDialog(
+                title: Row(
+                  children: [
+                    Icon(Icons.check_circle, color: Colors.green, size: 28),
+                    const SizedBox(width: 12),
+                    Text(
+                      'Account Created!',
+                      style: TextStyle(color: AppTheme.primaryColor),
+                    ),
+                  ],
+                ),
+                content: SizedBox(
+                  width: 350,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Icon(Icons.check_circle, color: Colors.green, size: 28),
-                      const SizedBox(width: 12),
-                      Text(
-                        'Account Created!',
-                        style: TextStyle(color: AppTheme.primaryColor),
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: Colors.green[50],
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: Colors.green[200]!),
+                        ),
+                        child: Row(
+                          children: [
+                            Icon(Icons.info_outline, color: Colors.green[700]),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                'The account has been created successfully!',
+                                style: TextStyle(
+                                  color: Colors.green[700],
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      const Text(
+                        'Please enter your admin password to continue managing accounts:',
+                        style: TextStyle(fontSize: 14),
+                      ),
+                      const SizedBox(height: 16),
+                      TextField(
+                        controller: passwordController,
+                        obscureText: obscurePassword,
+                        decoration: InputDecoration(
+                          labelText: 'Your Admin Password',
+                          hintText: 'Enter your password',
+                          border: const OutlineInputBorder(),
+                          prefixIcon: const Icon(Icons.lock_outline),
+                          suffixIcon: IconButton(
+                            icon: Icon(
+                              obscurePassword
+                                  ? Icons.visibility_off
+                                  : Icons.visibility,
+                            ),
+                            onPressed: () {
+                              setDialogState(() {
+                                obscurePassword = !obscurePassword;
+                              });
+                            },
+                          ),
+                        ),
+                        autofocus: true,
+                        enabled: !isLoading,
+                        onSubmitted: (_) {
+                          if (passwordController.text.isNotEmpty &&
+                              !isLoading) {}
+                        },
+                      ),
+                      const SizedBox(height: 12),
+                      Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: Colors.blue[50],
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: Row(
+                          children: [
+                            Icon(
+                              Icons.lightbulb_outline,
+                              color: Colors.blue[700],
+                              size: 16,
+                            ),
+                            const SizedBox(width: 6),
+                            Expanded(
+                              child: Text(
+                                'This is required because creating an account signs you out temporarily.',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: Colors.blue[700],
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
                     ],
                   ),
-                  content: SizedBox(
-                    width: 350,
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.all(12),
-                          decoration: BoxDecoration(
-                            color: Colors.green[50],
-                            borderRadius: BorderRadius.circular(8),
-                            border: Border.all(color: Colors.green[200]!),
-                          ),
-                          child: Row(
-                            children: [
-                              Icon(
-                                Icons.info_outline,
-                                color: Colors.green[700],
-                              ),
-                              const SizedBox(width: 8),
-                              Expanded(
-                                child: Text(
-                                  'The account has been created successfully!',
-                                  style: TextStyle(
-                                    color: Colors.green[700],
-                                    fontWeight: FontWeight.w500,
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        const SizedBox(height: 16),
-                        const Text(
-                          'Please enter your admin password to continue managing accounts:',
-                          style: TextStyle(fontSize: 14),
-                        ),
-                        const SizedBox(height: 16),
-                        TextField(
-                          controller: passwordController,
-                          obscureText: obscurePassword,
-                          decoration: InputDecoration(
-                            labelText: 'Your Admin Password',
-                            hintText: 'Enter your password',
-                            border: const OutlineInputBorder(),
-                            prefixIcon: const Icon(Icons.lock_outline),
-                            suffixIcon: IconButton(
-                              icon: Icon(
-                                obscurePassword
-                                    ? Icons.visibility_off
-                                    : Icons.visibility,
-                              ),
-                              onPressed: () {
-                                setDialogState(
-                                  () => obscurePassword = !obscurePassword,
-                                );
-                              },
-                            ),
-                          ),
-                          autofocus: true,
-                          onSubmitted: (_) {
-                            if (passwordController.text.isNotEmpty &&
-                                !isLoading) {
-                              _handleReauthentication(
-                                passwordController.text,
-                                adminEmail,
-                                setDialogState,
-                                dialogContext,
-                              );
-                            }
-                          },
-                        ),
-                        const SizedBox(height: 12),
-                        Container(
-                          padding: const EdgeInsets.all(8),
-                          decoration: BoxDecoration(
-                            color: Colors.blue[50],
-                            borderRadius: BorderRadius.circular(6),
-                          ),
-                          child: Row(
-                            children: [
-                              Icon(
-                                Icons.lightbulb_outline,
-                                color: Colors.blue[700],
-                                size: 16,
-                              ),
-                              const SizedBox(width: 6),
-                              Expanded(
-                                child: Text(
-                                  'This is required because creating an account signs you out temporarily.',
-                                  style: TextStyle(
-                                    fontSize: 12,
-                                    color: Colors.blue[700],
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  actions: [
-                    TextButton(
-                      onPressed:
-                          isLoading
-                              ? null
-                              : () {
-                                // If they cancel, redirect to login page
-                                Navigator.of(context).pushNamedAndRemoveUntil(
-                                  '/login',
-                                  (route) => false,
-                                );
-                              },
-                      child: const Text('Logout Instead'),
-                    ),
-                    ElevatedButton(
-                      onPressed:
-                          isLoading
-                              ? null
-                              : () {
-                                if (passwordController.text.isNotEmpty) {
-                                  _handleReauthentication(
-                                    passwordController.text,
-                                    adminEmail,
-                                    setDialogState,
-                                    dialogContext,
-                                  );
-                                }
-                              },
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: AppTheme.primaryColor,
-                        foregroundColor: Colors.white,
-                      ),
-                      child:
-                          isLoading
-                              ? const SizedBox(
-                                width: 20,
-                                height: 20,
-                                child: CircularProgressIndicator(
-                                  color: Colors.white,
-                                  strokeWidth: 2,
-                                ),
-                              )
-                              : const Text('Continue'),
-                    ),
-                  ],
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(16),
-                  ),
                 ),
+                actions: [
+                  TextButton(
+                    onPressed:
+                        isLoading
+                            ? null
+                            : () {
+                              // If they cancel, redirect to login page
+                              Navigator.of(context).pushNamedAndRemoveUntil(
+                                '/login',
+                                (route) => false,
+                              );
+                            },
+                    child: const Text('Logout Instead'),
+                  ),
+                  ElevatedButton(
+                    onPressed:
+                        isLoading
+                            ? null
+                            : () {
+                              if (passwordController.text.isNotEmpty) {}
+                            },
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppTheme.primaryColor,
+                      foregroundColor: Colors.white,
+                    ),
+                    child:
+                        isLoading
+                            ? const SizedBox(
+                              width: 20,
+                              height: 20,
+                              child: CircularProgressIndicator(
+                                color: Colors.white,
+                                strokeWidth: 2,
+                              ),
+                            )
+                            : const Text('Continue'),
+                  ),
+                ],
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16),
+                ),
+              );
+            },
           ),
     ).then((_) {
       // Clean up controller when dialog is closed
       passwordController.dispose();
     });
-  }
-
-  Future<void> _handleReauthentication(
-    String password,
-    String adminEmail,
-    StateSetter setDialogState,
-    BuildContext dialogContext,
-  ) async {
-    setDialogState(() {});
-    bool isLoading = true;
-    setDialogState(() {});
-
-    try {
-      final authService = Provider.of<FirebaseAuthService>(
-        context,
-        listen: false,
-      );
-
-      final success = await authService.reauthenticateAdmin(
-        adminEmail,
-        password,
-      );
-
-      if (success) {
-        Navigator.pop(dialogContext); // Close re-auth dialog
-        widget.onAccountCreated();
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Row(
-              children: [
-                const Icon(Icons.check_circle, color: Colors.white),
-                const SizedBox(width: 8),
-                const Text('Account created and signed back in successfully!'),
-              ],
-            ),
-            backgroundColor: Colors.green[700],
-            behavior: SnackBarBehavior.floating,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(10),
-            ),
-          ),
-        );
-      } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: const Text('Invalid password. Please try again.'),
-            backgroundColor: Colors.red[700],
-            behavior: SnackBarBehavior.floating,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(10),
-            ),
-          ),
-        );
-      }
-    } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Error: $e'),
-          backgroundColor: Colors.red[700],
-          behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(10),
-          ),
-        ),
-      );
-    } finally {
-      isLoading = false;
-      setDialogState(() {});
-    }
   }
 
   @override
