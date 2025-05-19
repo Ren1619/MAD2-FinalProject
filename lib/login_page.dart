@@ -33,9 +33,12 @@ class _LoginPageState extends State<LoginPage> {
       return;
     }
 
-    setState(() {
-      _isLoading = true;
-    });
+    // Only set loading state if widget is still mounted
+    if (mounted) {
+      setState(() {
+        _isLoading = true;
+      });
+    }
 
     try {
       final firebaseAuthService = Provider.of<FirebaseAuthService>(
@@ -49,10 +52,16 @@ class _LoginPageState extends State<LoginPage> {
         _passwordController.text,
       );
 
+      // Check if widget is still mounted before proceeding
+      if (!mounted) return;
+
       if (user != null) {
         // Check if account is active
         if (user['status'] != 'Active') {
-          throw 'Your account has been deactivated. Please contact your administrator.';
+          _showErrorSnackBar(
+            'Your account has been deactivated. Please contact your administrator.',
+          );
+          return;
         }
 
         // Navigate based on user role
@@ -61,6 +70,9 @@ class _LoginPageState extends State<LoginPage> {
         _showErrorSnackBar('Invalid email or password. Please try again.');
       }
     } catch (e) {
+      // Check if widget is still mounted before showing error
+      if (!mounted) return;
+
       String errorMessage = e.toString();
 
       // Handle Firebase Auth specific errors
@@ -78,6 +90,7 @@ class _LoginPageState extends State<LoginPage> {
 
       _showErrorSnackBar(errorMessage);
     } finally {
+      // Only update loading state if widget is still mounted
       if (mounted) {
         setState(() {
           _isLoading = false;
@@ -87,6 +100,9 @@ class _LoginPageState extends State<LoginPage> {
   }
 
   void _navigateToRoleDashboard(String role) {
+    // Check if widget is still mounted before navigation
+    if (!mounted) return;
+
     // Clear the navigation stack and navigate to appropriate dashboard
     switch (role) {
       case FirebaseAuthService.ROLE_ADMIN:
@@ -109,6 +125,9 @@ class _LoginPageState extends State<LoginPage> {
   }
 
   void _handleForgotPassword() {
+    // Check if widget is still mounted before showing dialog
+    if (!mounted) return;
+
     final emailController = TextEditingController();
 
     showDialog(
@@ -172,18 +191,21 @@ class _LoginPageState extends State<LoginPage> {
                       !RegExp(
                         r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$',
                       ).hasMatch(email)) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        content: const Text(
-                          'Please enter a valid email address',
+                    // Check if context is still valid before showing SnackBar
+                    if (context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: const Text(
+                            'Please enter a valid email address',
+                          ),
+                          backgroundColor: Colors.red[700],
+                          behavior: SnackBarBehavior.floating,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(10),
+                          ),
                         ),
-                        backgroundColor: Colors.red[700],
-                        behavior: SnackBarBehavior.floating,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                      ),
-                    );
+                      );
+                    }
                     return;
                   }
 
@@ -196,33 +218,37 @@ class _LoginPageState extends State<LoginPage> {
                         );
                     await firebaseAuthService.resetPassword(email);
 
-                    // Close dialog
-                    Navigator.pop(context);
+                    // Close dialog only if context is still valid
+                    if (context.mounted) {
+                      Navigator.pop(context);
 
-                    // Show success message
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        content: Text(
-                          'Password reset link sent to $email. Please check your inbox.',
-                        ),
-                        backgroundColor: Colors.green[700],
-                        behavior: SnackBarBehavior.floating,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                        duration: const Duration(seconds: 5),
-                      ),
-                    );
+                      // Show success message only if widget is still mounted
+                      if (mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text(
+                              'Password reset link sent to $email. Please check your inbox.',
+                            ),
+                            backgroundColor: Colors.green[700],
+                            behavior: SnackBarBehavior.floating,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            duration: const Duration(seconds: 5),
+                          ),
+                        );
 
-                    // Log the password reset request
-                    final logsService = Provider.of<FirebaseLogsService>(
-                      context,
-                      listen: false,
-                    );
-                    await logsService.logActivity(
-                      description: 'Password reset requested for: $email',
-                      type: FirebaseLogsService.TYPE_AUTHENTICATION,
-                    );
+                        // Log the password reset request
+                        final logsService = Provider.of<FirebaseLogsService>(
+                          context,
+                          listen: false,
+                        );
+                        await logsService.logActivity(
+                          description: 'Password reset requested for: $email',
+                          type: FirebaseLogsService.TYPE_AUTHENTICATION,
+                        );
+                      }
+                    }
                   } catch (e) {
                     String errorMessage = e.toString();
                     if (errorMessage.contains('user-not-found')) {
@@ -230,16 +256,19 @@ class _LoginPageState extends State<LoginPage> {
                           'No account found with this email address.';
                     }
 
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        content: Text(errorMessage),
-                        backgroundColor: Colors.red[700],
-                        behavior: SnackBarBehavior.floating,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(10),
+                    // Check if context is still valid before showing error
+                    if (context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text(errorMessage),
+                          backgroundColor: Colors.red[700],
+                          behavior: SnackBarBehavior.floating,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(10),
+                          ),
                         ),
-                      ),
-                    );
+                      );
+                    }
                   }
                 },
                 child: const Text('Send Reset Link'),
@@ -250,6 +279,9 @@ class _LoginPageState extends State<LoginPage> {
   }
 
   void _showErrorSnackBar(String message) {
+    // Check if widget is still mounted before showing SnackBar
+    if (!mounted) return;
+
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(message),
@@ -257,6 +289,20 @@ class _LoginPageState extends State<LoginPage> {
         behavior: SnackBarBehavior.floating,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
         duration: const Duration(seconds: 4),
+      ),
+    );
+  }
+
+  void _showSuccessSnackBar(String message) {
+    // Check if widget is still mounted before showing SnackBar
+    if (!mounted) return;
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: Colors.green[700],
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
       ),
     );
   }

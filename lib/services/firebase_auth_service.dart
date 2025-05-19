@@ -164,15 +164,17 @@ class FirebaseAuthService {
     required String companyId,
   }) async {
     try {
-      // Get current user to verify admin privileges
+      // Get current admin user data before creating new account
       final currentUserData = await currentUser;
       if (currentUserData == null || currentUserData['role'] != ROLE_ADMIN) {
         throw 'Only administrators can create accounts';
       }
 
-      // Store current user info for logging (before we get signed out)
-      final currentUserId = currentUserData['account_id'];
-      final currentUserEmail = currentUserData['email'];
+      // Store admin credentials for re-authentication
+      final adminEmail = currentUserData['email'];
+      final adminUserId = currentUserData['account_id'];
+
+      print('Admin creating account for: $email'); // Debug log
 
       // Validate role (admin cannot create another admin)
       if (role == ROLE_ADMIN) {
@@ -181,7 +183,7 @@ class FirebaseAuthService {
 
       print('Creating Firebase user for: $email'); // Debug log
 
-      // Create Firebase user
+      // Create Firebase user (this will sign out the current admin)
       final UserCredential result = await _auth.createUserWithEmailAndPassword(
         email: email,
         password: password,
@@ -215,10 +217,10 @@ class FirebaseAuthService {
           await _firestore.collection('logs').add({
             'log_id': UuidGenerator.generateUuid(),
             'log_desc':
-                'New account created: $email with role: $role by admin: $currentUserEmail',
+                'New account created: $email with role: $role by admin: $adminEmail',
             'type': 'Account Management',
             'company_id': companyId,
-            'user_id': currentUserId,
+            'user_id': adminUserId,
             'created_at': FieldValue.serverTimestamp(),
           });
           print('Activity logged successfully'); // Debug log
@@ -227,6 +229,7 @@ class FirebaseAuthService {
         }
 
         // Return true to indicate success
+        // The UI will handle re-authentication if needed
         return true;
       }
 
@@ -249,6 +252,26 @@ class FirebaseAuthService {
     }
   }
 
+  Future<bool> reAuthenticateAdmin(String email, String password) async {
+    try {
+      final UserCredential result = await _auth.signInWithEmailAndPassword(
+        email: email,
+        password: password,
+      );
+
+      if (result.user != null) {
+        print('Admin re-authenticated successfully');
+        return true;
+      }
+      return false;
+    } catch (e) {
+      print('Error re-authenticating admin: $e');
+      return false;
+    }
+  }
+
+  // Method to check if current user is signed in
+  bool get isSignedIn => _auth.currentUser != null;
 
   // Update user account status
   Future<bool> updateUserStatus(String accountId, String status) async {
