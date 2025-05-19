@@ -10,6 +10,7 @@ import 'services/firebase_budget_service.dart';
 import 'services/firebase_logs_service.dart';
 import 'theme.dart';
 import 'pages/admin_dashboard.dart';
+import 'pages/budgets/budgets_page.dart'; // Import BudgetsPage
 
 void main() async {
   // Ensure Flutter is initialized
@@ -55,7 +56,7 @@ class MyApp extends StatelessWidget {
           '/budget-manager-dashboard':
               (context) => const BudgetManagerDashboard(),
           '/financial-officer-dashboard':
-              (context) => const FinancialOfficerDashboard(),
+              (context) => const FinancialOfficerBudgetsPage(), // Updated route
           '/spender-dashboard': (context) => const AuthorizedSpenderDashboard(),
         },
 
@@ -154,7 +155,8 @@ class _AuthWrapperState extends State<AuthWrapper> {
                   case FirebaseAuthService.ROLE_BUDGET_MANAGER:
                     return const BudgetManagerDashboard();
                   case FirebaseAuthService.ROLE_FINANCIAL_OFFICER:
-                    return const FinancialOfficerDashboard();
+                    // Route Financial Officers to the BudgetsPage
+                    return FinancialOfficerBudgetsPage(userData: userData);
                   case FirebaseAuthService.ROLE_AUTHORIZED_SPENDER:
                     return const AuthorizedSpenderDashboard();
                   default:
@@ -169,9 +171,26 @@ class _AuthWrapperState extends State<AuthWrapper> {
   }
 }
 
-// Import the dashboard widgets (we'll create these in subsequent steps)
-// For now, let's create placeholder widgets
+// Financial Officer Budgets Page Wrapper
+class FinancialOfficerBudgetsPage extends StatelessWidget {
+  final Map<String, dynamic>? userData;
 
+  const FinancialOfficerBudgetsPage({super.key, this.userData});
+
+  @override
+  Widget build(BuildContext context) {
+    // Use BudgetsPage as the main page for Financial Officers
+    // No drawer needed since they only have access to budgets
+    return BudgetsPage(
+      userData: userData,
+      // No onOpenDrawer since Financial Officers don't need a drawer
+      // The BudgetsPage will automatically show the Create Budget button
+      // for Financial Officers based on their role
+    );
+  }
+}
+
+// Keep the existing placeholder dashboards for other roles
 class BudgetManagerDashboard extends StatelessWidget {
   const BudgetManagerDashboard({super.key});
 
@@ -222,64 +241,6 @@ class BudgetManagerDashboard extends StatelessWidget {
       body: const Center(
         child: Text(
           'Budget Manager Dashboard\n(To be implemented)',
-          textAlign: TextAlign.center,
-          style: TextStyle(fontSize: 18),
-        ),
-      ),
-    );
-  }
-}
-
-class FinancialOfficerDashboard extends StatelessWidget {
-  const FinancialOfficerDashboard({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Financial Officer Dashboard'),
-        backgroundColor: Colors.white,
-        elevation: 0,
-        actions: [
-          PopupMenuButton<String>(
-            icon: CircleAvatar(
-              backgroundColor: Colors.blue[100],
-              child: Icon(Icons.person, color: Colors.blue[800]),
-            ),
-            onSelected: (value) async {
-              if (value == 'logout') {
-                await context.read<FirebaseAuthService>().signOut();
-              }
-            },
-            itemBuilder:
-                (context) => [
-                  const PopupMenuItem(
-                    value: 'profile',
-                    child: Row(
-                      children: [
-                        Icon(Icons.person),
-                        SizedBox(width: 8),
-                        Text('Profile'),
-                      ],
-                    ),
-                  ),
-                  const PopupMenuItem(
-                    value: 'logout',
-                    child: Row(
-                      children: [
-                        Icon(Icons.logout, color: Colors.red),
-                        SizedBox(width: 8),
-                        Text('Logout', style: TextStyle(color: Colors.red)),
-                      ],
-                    ),
-                  ),
-                ],
-          ),
-        ],
-      ),
-      body: const Center(
-        child: Text(
-          'Financial Officer Dashboard\n(To be implemented)',
           textAlign: TextAlign.center,
           style: TextStyle(fontSize: 18),
         ),

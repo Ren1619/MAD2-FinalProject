@@ -84,7 +84,8 @@ class _CreateBudgetPageState extends State<CreateBudgetPage> {
         _showSuccessSnackBar(
           'Budget created successfully! It is now pending approval.',
         );
-        Navigator.pop(context);
+        // Return true to indicate successful creation
+        Navigator.pop(context, true);
       } else {
         _showErrorSnackBar('Failed to create budget. Please try again.');
       }

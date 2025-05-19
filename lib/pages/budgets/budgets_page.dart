@@ -59,8 +59,15 @@ class _BudgetsPageState extends State<BudgetsPage>
     setState(() => _isLoading = false);
   }
 
+  bool _isRefreshing = false;
+
   Future<void> _loadBudgets() async {
     if (_userData == null) return;
+
+    // Don't show loading spinner if we're just refreshing
+    if (!_isRefreshing) {
+      setState(() => _isLoading = true);
+    }
 
     try {
       final budgetService = Provider.of<FirebaseBudgetService>(
@@ -77,6 +84,21 @@ class _BudgetsPageState extends State<BudgetsPage>
       }
     } catch (e) {
       _showErrorSnackBar('Error loading budgets: $e');
+    } finally {
+      setState(() {
+        _isLoading = false;
+        _isRefreshing = false;
+      });
+    }
+  }
+
+  Future<void> _refreshBudgets() async {
+    setState(() => _isRefreshing = true);
+    await _loadBudgets();
+
+    // Show feedback to user
+    if (mounted) {
+      _showSuccessSnackBar('Budget list updated');
     }
   }
 
@@ -84,7 +106,26 @@ class _BudgetsPageState extends State<BudgetsPage>
     Navigator.push(
       context,
       MaterialPageRoute(builder: (context) => const CreateBudgetPage()),
-    ).then((_) => _loadBudgets());
+    ).then((result) {
+      // Check if a budget was successfully created
+      if (result == true) {
+        // Set refreshing state before loading
+        setState(() => _isRefreshing = true);
+
+        // Add a delay to ensure Firestore has propagated the changes
+        Future.delayed(const Duration(milliseconds: 800), () {
+          if (mounted) {
+            _loadBudgets().then((_) {
+              if (mounted) {
+                // Switch to the "Pending for Approval" tab to show the new budget
+                _tabController.animateTo(0);
+                _showSuccessSnackBar('Budget created and list refreshed');
+              }
+            });
+          }
+        });
+      }
+    });
   }
 
   void _viewBudgetDetails(Map<String, dynamic> budget) {
@@ -196,12 +237,16 @@ class _BudgetsPageState extends State<BudgetsPage>
       backgroundColor: AppTheme.scaffoldBackground,
       appBar: CustomAppBar(
         title: 'Budget Management',
-        onMenuPressed: widget.onOpenDrawer, // Pass the drawer function
+        onMenuPressed: widget.onOpenDrawer,
         userData: widget.userData,
         actions: [
           IconButton(
             icon: const Icon(Icons.refresh),
-            onPressed: _loadBudgets,
+            onPressed: () async {
+              setState(() => _isLoading = true);
+              await _loadBudgets();
+              _showSuccessSnackBar('Budget list refreshed');
+            },
             tooltip: 'Refresh',
           ),
         ],
@@ -239,39 +284,52 @@ class _BudgetsPageState extends State<BudgetsPage>
                   ],
                 ),
                 const SizedBox(height: 16),
-                // Budget Stats
-                Row(
+                // Budget Stats with pull-to-refresh hint
+                Column(
                   children: [
-                    Expanded(
-                      child: _buildStatCard(
-                        'Pending Approval',
-                        _budgetsByStatus['Pending for Approval']!.length
-                            .toString(),
-                        Colors.orange,
-                      ),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: _buildStatCard(
+                            'Pending Approval',
+                            _budgetsByStatus['Pending for Approval']!.length
+                                .toString(),
+                            Colors.orange,
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: _buildStatCard(
+                            'Active',
+                            _budgetsByStatus['Active']!.length.toString(),
+                            Colors.green,
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: _buildStatCard(
+                            'Completed',
+                            _budgetsByStatus['Completed']!.length.toString(),
+                            Colors.blue,
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: _buildStatCard(
+                            'For Revision',
+                            _budgetsByStatus['For Revision']!.length.toString(),
+                            Colors.red,
+                          ),
+                        ),
+                      ],
                     ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: _buildStatCard(
-                        'Active',
-                        _budgetsByStatus['Active']!.length.toString(),
-                        Colors.green,
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: _buildStatCard(
-                        'Completed',
-                        _budgetsByStatus['Completed']!.length.toString(),
-                        Colors.blue,
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: _buildStatCard(
-                        'For Revision',
-                        _budgetsByStatus['For Revision']!.length.toString(),
-                        Colors.red,
+                    const SizedBox(height: 8),
+                    Text(
+                      'Pull down any list to refresh',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: AppTheme.textSecondary,
+                        fontStyle: FontStyle.italic,
                       ),
                     ),
                   ],
@@ -298,7 +356,7 @@ class _BudgetsPageState extends State<BudgetsPage>
             ),
           ),
 
-          // Tab Content
+          // Tab Content with RefreshIndicator
           Expanded(
             child: TabBarView(
               controller: _tabController,
@@ -348,26 +406,38 @@ class _BudgetsPageState extends State<BudgetsPage>
     final budgets = _budgetsByStatus[status]!;
 
     if (budgets.isEmpty) {
-      return EmptyStateWidget(
-        message:
-            status == 'Pending for Approval'
-                ? 'No budgets pending approval.\n${_canCreateBudgets() ? 'Create a new budget to get started.' : 'Budgets will appear here when created by Financial Officers.'}'
-                : 'No $status budgets found.',
-        icon: Icons.account_balance_wallet_outlined,
-        onActionPressed:
-            (status == 'Pending for Approval' && _canCreateBudgets())
-                ? _showCreateBudgetPage
-                : null,
-        actionLabel: 'Create Budget',
+      return RefreshIndicator(
+        onRefresh: _loadBudgets,
+        child: SingleChildScrollView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          child: Container(
+            height: MediaQuery.of(context).size.height * 0.6,
+            child: EmptyStateWidget(
+              message:
+                  status == 'Pending for Approval'
+                      ? 'No budgets pending approval.\n${_canCreateBudgets() ? 'Create a new budget to get started.' : 'Budgets will appear here when created by Financial Officers.'}'
+                      : 'No $status budgets found.',
+              icon: Icons.account_balance_wallet_outlined,
+              onActionPressed:
+                  (status == 'Pending for Approval' && _canCreateBudgets())
+                      ? _showCreateBudgetPage
+                      : null,
+              actionLabel: 'Create Budget',
+            ),
+          ),
+        ),
       );
     }
 
-    return ListView.builder(
-      padding: const EdgeInsets.all(16),
-      itemCount: budgets.length,
-      itemBuilder: (context, index) {
-        return _buildBudgetCard(budgets[index], status);
-      },
+    return RefreshIndicator(
+      onRefresh: _loadBudgets,
+      child: ListView.builder(
+        padding: const EdgeInsets.all(16),
+        itemCount: budgets.length,
+        itemBuilder: (context, index) {
+          return _buildBudgetCard(budgets[index], status);
+        },
+      ),
     );
   }
 
