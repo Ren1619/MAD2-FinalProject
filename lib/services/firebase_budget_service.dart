@@ -24,7 +24,10 @@ class FirebaseBudgetService {
     required List<String> authorizedSpenderIds,
   }) async {
     try {
-      if (_currentUserId == null) return false;
+      if (_currentUserId == null) {
+        print('Error: No current user ID found');
+        return false;
+      }
 
       // Verify user is Financial Officer
       final userDoc =
@@ -79,19 +82,32 @@ class FirebaseBudgetService {
     }
   }
 
-  // Get budgets by status for current user's role
+  // Get budgets by status for current user's role - FIXED VERSION
   Future<List<Map<String, dynamic>>> getBudgetsByStatus(String status) async {
     try {
-      if (_currentUserId == null) return [];
+      // Add more detailed logging
+      print('Getting budgets by status: $status');
+      print('Current user ID: $_currentUserId');
+
+      if (_currentUserId == null) {
+        print('Error: No current user ID found');
+        return [];
+      }
 
       // Get current user data to determine role
       final userDoc =
           await _firestore.collection('accounts').doc(_currentUserId).get();
-      if (!userDoc.exists) return [];
+      if (!userDoc.exists) {
+        print('Error: User document does not exist for ID: $_currentUserId');
+        return [];
+      }
 
       final userData = userDoc.data()!;
       final userRole = userData['role'];
       final companyId = userData['company_id'];
+
+      print('User role: $userRole');
+      print('Company ID: $companyId');
 
       List<Map<String, dynamic>> budgets = [];
 
@@ -99,39 +115,118 @@ class FirebaseBudgetService {
         case 'Administrator':
         case 'Budget Manager':
           // Admin and Budget Manager can see all budgets in their company
-          final snapshot =
-              await _firestore
-                  .collection('budgets')
-                  .where('company_id', isEqualTo: companyId)
-                  .where('status', isEqualTo: status)
-                  .orderBy('created_at', descending: true)
-                  .get();
+          print('Fetching budgets for admin/budget manager...');
+          try {
+            // Use simpler query without orderBy to avoid index issues
+            final snapshot =
+                await _firestore
+                    .collection('budgets')
+                    .where('company_id', isEqualTo: companyId)
+                    .where('status', isEqualTo: status)
+                    .get();
 
-          budgets = await _processBudgetDocs(snapshot.docs);
+            print('Found ${snapshot.docs.length} budgets');
+            budgets = await _processBudgetDocs(snapshot.docs);
+
+            // Sort in dart instead of firestore
+            budgets.sort((a, b) {
+              final aTime = a['created_at'] as Timestamp?;
+              final bTime = b['created_at'] as Timestamp?;
+              if (aTime == null || bTime == null) return 0;
+              return bTime.compareTo(aTime);
+            });
+          } catch (e) {
+            print('Error in admin/budget manager query: $e');
+            // Try fallback query without compound index
+            final snapshot =
+                await _firestore
+                    .collection('budgets')
+                    .where('company_id', isEqualTo: companyId)
+                    .get();
+
+            print('Fallback query found ${snapshot.docs.length} budgets');
+            final allBudgets = await _processBudgetDocs(snapshot.docs);
+            budgets =
+                allBudgets
+                    .where((budget) => budget['status'] == status)
+                    .toList();
+
+            // Sort in dart
+            budgets.sort((a, b) {
+              final aTime = a['created_at'] as Timestamp?;
+              final bTime = b['created_at'] as Timestamp?;
+              if (aTime == null || bTime == null) return 0;
+              return bTime.compareTo(aTime);
+            });
+          }
           break;
 
         case 'Financial Planning and Budgeting Officer':
           // Financial Officer can only see budgets they created
-          final snapshot =
-              await _firestore
-                  .collection('budgets')
-                  .where('created_by', isEqualTo: _currentUserId)
-                  .where('status', isEqualTo: status)
-                  .orderBy('created_at', descending: true)
-                  .get();
+          print('Fetching budgets for financial officer...');
+          try {
+            // Use simpler query
+            final snapshot =
+                await _firestore
+                    .collection('budgets')
+                    .where('created_by', isEqualTo: _currentUserId)
+                    .where('status', isEqualTo: status)
+                    .get();
 
-          budgets = await _processBudgetDocs(snapshot.docs);
+            print(
+              'Found ${snapshot.docs.length} budgets for financial officer',
+            );
+            budgets = await _processBudgetDocs(snapshot.docs);
+
+            // Sort in dart
+            budgets.sort((a, b) {
+              final aTime = a['created_at'] as Timestamp?;
+              final bTime = b['created_at'] as Timestamp?;
+              if (aTime == null || bTime == null) return 0;
+              return bTime.compareTo(aTime);
+            });
+          } catch (e) {
+            print('Error in financial officer query: $e');
+            // Try fallback query
+            final snapshot =
+                await _firestore
+                    .collection('budgets')
+                    .where('created_by', isEqualTo: _currentUserId)
+                    .get();
+
+            print('Fallback query found ${snapshot.docs.length} budgets');
+            final allBudgets = await _processBudgetDocs(snapshot.docs);
+            budgets =
+                allBudgets
+                    .where((budget) => budget['status'] == status)
+                    .toList();
+
+            // Sort in dart
+            budgets.sort((a, b) {
+              final aTime = a['created_at'] as Timestamp?;
+              final bTime = b['created_at'] as Timestamp?;
+              if (aTime == null || bTime == null) return 0;
+              return bTime.compareTo(aTime);
+            });
+          }
           break;
 
         case 'Authorized Spender':
           // Authorized Spenders can only see budgets they are assigned to
+          print('Fetching budgets for authorized spender...');
           budgets = await _getBudgetsForAuthorizedSpender(status);
           break;
+
+        default:
+          print('Unknown user role: $userRole');
+          return [];
       }
 
+      print('Returning ${budgets.length} budgets');
       return budgets;
     } catch (e) {
       print('Error getting budgets by status: $e');
+      print('Stack trace: ${StackTrace.current}');
       return [];
     }
   }
@@ -141,12 +236,16 @@ class FirebaseBudgetService {
     String status,
   ) async {
     try {
+      print('Getting budgets for authorized spender with status: $status');
+
       // Get all budget_auth records for this user
       final authSnapshot =
           await _firestore
               .collection('budgets_authorized_spenders')
               .where('account_id', isEqualTo: _currentUserId)
               .get();
+
+      print('Found ${authSnapshot.docs.length} budget authorization records');
 
       if (authSnapshot.docs.isEmpty) return [];
 
@@ -156,14 +255,24 @@ class FirebaseBudgetService {
               .map((doc) => doc.data()['budget_id'] as String)
               .toList();
 
+      print('Budget IDs: $budgetIds');
+
       // Get budgets with the specified status
       List<Map<String, dynamic>> budgets = [];
       for (String budgetId in budgetIds) {
-        final budgetDoc =
-            await _firestore.collection('budgets').doc(budgetId).get();
-        if (budgetDoc.exists && budgetDoc.data()!['status'] == status) {
-          final budgetData = await _processBudgetDoc(budgetDoc);
-          budgets.add(budgetData);
+        try {
+          final budgetDoc =
+              await _firestore.collection('budgets').doc(budgetId).get();
+          if (budgetDoc.exists) {
+            final budgetData = budgetDoc.data()!;
+            print('Budget ${budgetId} status: ${budgetData['status']}');
+            if (budgetData['status'] == status) {
+              final processedBudget = await _processBudgetDoc(budgetDoc);
+              budgets.add(processedBudget);
+            }
+          }
+        } catch (e) {
+          print('Error processing budget $budgetId: $e');
         }
       }
 
@@ -175,6 +284,7 @@ class FirebaseBudgetService {
         return bTime.compareTo(aTime);
       });
 
+      print('Returning ${budgets.length} budgets for authorized spender');
       return budgets;
     } catch (e) {
       print('Error getting budgets for authorized spender: $e');
@@ -188,8 +298,12 @@ class FirebaseBudgetService {
   ) async {
     List<Map<String, dynamic>> budgets = [];
     for (var doc in docs) {
-      final budgetData = await _processBudgetDoc(doc);
-      budgets.add(budgetData);
+      try {
+        final budgetData = await _processBudgetDoc(doc);
+        budgets.add(budgetData);
+      } catch (e) {
+        print('Error processing budget document ${doc.id}: $e');
+      }
     }
     return budgets;
   }
@@ -198,57 +312,89 @@ class FirebaseBudgetService {
   Future<Map<String, dynamic>> _processBudgetDoc(DocumentSnapshot doc) async {
     final data = doc.data() as Map<String, dynamic>;
 
-    // Get creator information
-    final creatorDoc =
-        await _firestore.collection('accounts').doc(data['created_by']).get();
-    if (creatorDoc.exists) {
-      final creatorData = creatorDoc.data()!;
-      data['created_by_name'] =
-          '${creatorData['f_name']} ${creatorData['l_name']}';
-      data['created_by_email'] = creatorData['email'];
-    }
-
-    // Get authorized spenders
-    final authSnapshot =
-        await _firestore
-            .collection('budgets_authorized_spenders')
-            .where('budget_id', isEqualTo: data['budget_id'])
-            .get();
-
-    List<Map<String, dynamic>> authorizedSpenders = [];
-    for (var authDoc in authSnapshot.docs) {
-      final spenderDoc =
-          await _firestore
-              .collection('accounts')
-              .doc(authDoc.data()['account_id'])
-              .get();
-      if (spenderDoc.exists) {
-        final spenderData = spenderDoc.data()!;
-        authorizedSpenders.add({
-          'account_id': spenderData['account_id'],
-          'name': '${spenderData['f_name']} ${spenderData['l_name']}',
-          'email': spenderData['email'],
-        });
+    try {
+      // Get creator information
+      if (data['created_by'] != null) {
+        try {
+          final creatorDoc =
+              await _firestore
+                  .collection('accounts')
+                  .doc(data['created_by'])
+                  .get();
+          if (creatorDoc.exists) {
+            final creatorData = creatorDoc.data()!;
+            data['created_by_name'] =
+                '${creatorData['f_name']} ${creatorData['l_name']}';
+            data['created_by_email'] = creatorData['email'];
+          }
+        } catch (e) {
+          print('Error getting creator info: $e');
+          data['created_by_name'] = 'Unknown User';
+        }
       }
+
+      // Get authorized spenders
+      try {
+        final authSnapshot =
+            await _firestore
+                .collection('budgets_authorized_spenders')
+                .where('budget_id', isEqualTo: data['budget_id'])
+                .get();
+
+        List<Map<String, dynamic>> authorizedSpenders = [];
+        for (var authDoc in authSnapshot.docs) {
+          try {
+            final spenderDoc =
+                await _firestore
+                    .collection('accounts')
+                    .doc(authDoc.data()['account_id'])
+                    .get();
+            if (spenderDoc.exists) {
+              final spenderData = spenderDoc.data()!;
+              authorizedSpenders.add({
+                'account_id': spenderData['account_id'],
+                'name': '${spenderData['f_name']} ${spenderData['l_name']}',
+                'email': spenderData['email'],
+              });
+            }
+          } catch (e) {
+            print('Error getting spender info: $e');
+          }
+        }
+        data['authorized_spenders'] = authorizedSpenders;
+      } catch (e) {
+        print('Error getting authorized spenders: $e');
+        data['authorized_spenders'] = [];
+      }
+
+      // Get expenses summary
+      try {
+        final expensesSnapshot =
+            await _firestore
+                .collection('expenses')
+                .where('budget_id', isEqualTo: data['budget_id'])
+                .get();
+
+        double totalExpenses = 0;
+        int expenseCount = expensesSnapshot.docs.length;
+        for (var expenseDoc in expensesSnapshot.docs) {
+          final expenseData = expenseDoc.data();
+          totalExpenses += (expenseData['expense_amt'] as num).toDouble();
+        }
+
+        data['total_expenses'] = totalExpenses;
+        data['expense_count'] = expenseCount;
+        data['remaining_amount'] =
+            (data['budget_amount'] as num).toDouble() - totalExpenses;
+      } catch (e) {
+        print('Error getting expenses summary: $e');
+        data['total_expenses'] = 0.0;
+        data['expense_count'] = 0;
+        data['remaining_amount'] = data['budget_amount'] ?? 0.0;
+      }
+    } catch (e) {
+      print('Error processing budget document: $e');
     }
-    data['authorized_spenders'] = authorizedSpenders;
-
-    // Get expenses summary
-    final expensesSnapshot =
-        await _firestore
-            .collection('expenses')
-            .where('budget_id', isEqualTo: data['budget_id'])
-            .get();
-
-    double totalExpenses = 0;
-    int expenseCount = expensesSnapshot.docs.length;
-    for (var expenseDoc in expensesSnapshot.docs) {
-      totalExpenses += (expenseDoc.data()['expense_amt'] as num).toDouble();
-    }
-
-    data['total_expenses'] = totalExpenses;
-    data['expense_count'] = expenseCount;
-    data['remaining_amount'] = data['budget_amount'] - totalExpenses;
 
     return data;
   }
@@ -382,24 +528,39 @@ class FirebaseBudgetService {
           await _firestore
               .collection('expenses')
               .where('budget_id', isEqualTo: budgetId)
-              .orderBy('created_at', descending: true)
               .get();
 
+      // Sort in dart instead of using orderBy
+      final docs = snapshot.docs;
+      docs.sort((a, b) {
+        final aTime = a.data()['created_at'] as Timestamp?;
+        final bTime = b.data()['created_at'] as Timestamp?;
+        if (aTime == null || bTime == null) return 0;
+        return bTime.compareTo(aTime);
+      });
+
       List<Map<String, dynamic>> expenses = [];
-      for (var doc in snapshot.docs) {
+      for (var doc in docs) {
         final data = doc.data();
 
         // Get creator information
-        final creatorDoc =
-            await _firestore
-                .collection('accounts')
-                .doc(data['created_by'])
-                .get();
-        if (creatorDoc.exists) {
-          final creatorData = creatorDoc.data()!;
-          data['created_by_name'] =
-              '${creatorData['f_name']} ${creatorData['l_name']}';
-          data['created_by_email'] = creatorData['email'];
+        if (data['created_by'] != null) {
+          try {
+            final creatorDoc =
+                await _firestore
+                    .collection('accounts')
+                    .doc(data['created_by'])
+                    .get();
+            if (creatorDoc.exists) {
+              final creatorData = creatorDoc.data()!;
+              data['created_by_name'] =
+                  '${creatorData['f_name']} ${creatorData['l_name']}';
+              data['created_by_email'] = creatorData['email'];
+            }
+          } catch (e) {
+            print('Error getting creator info for expense: $e');
+            data['created_by_name'] = 'Unknown User';
+          }
         }
 
         expenses.add(data);
@@ -530,21 +691,40 @@ class FirebaseBudgetService {
       final data = doc.data()!;
 
       // Get creator information
-      final creatorDoc =
-          await _firestore.collection('accounts').doc(data['created_by']).get();
-      if (creatorDoc.exists) {
-        final creatorData = creatorDoc.data()!;
-        data['created_by_name'] =
-            '${creatorData['f_name']} ${creatorData['l_name']}';
-        data['created_by_email'] = creatorData['email'];
+      if (data['created_by'] != null) {
+        try {
+          final creatorDoc =
+              await _firestore
+                  .collection('accounts')
+                  .doc(data['created_by'])
+                  .get();
+          if (creatorDoc.exists) {
+            final creatorData = creatorDoc.data()!;
+            data['created_by_name'] =
+                '${creatorData['f_name']} ${creatorData['l_name']}';
+            data['created_by_email'] = creatorData['email'];
+          }
+        } catch (e) {
+          print('Error getting creator info: $e');
+          data['created_by_name'] = 'Unknown User';
+        }
       }
 
       // Get budget information
-      final budgetDoc =
-          await _firestore.collection('budgets').doc(data['budget_id']).get();
-      if (budgetDoc.exists) {
-        final budgetData = budgetDoc.data()!;
-        data['budget_name'] = budgetData['budget_name'];
+      if (data['budget_id'] != null) {
+        try {
+          final budgetDoc =
+              await _firestore
+                  .collection('budgets')
+                  .doc(data['budget_id'])
+                  .get();
+          if (budgetDoc.exists) {
+            final budgetData = budgetDoc.data()!;
+            data['budget_name'] = budgetData['budget_name'];
+          }
+        } catch (e) {
+          print('Error getting budget info: $e');
+        }
       }
 
       return data;
@@ -605,6 +785,31 @@ class FirebaseBudgetService {
     } catch (e) {
       print('Error getting pending approvals count: $e');
       return 0;
+    }
+  }
+
+  // Test method to check if we can connect to Firestore and get budgets
+  Future<List<Map<String, dynamic>>> testGetBudgets() async {
+    try {
+      print('Testing Firestore connection...');
+
+      // Get all budgets without any filtering
+      final snapshot = await _firestore.collection('budgets').get();
+      print('Total budgets in collection: ${snapshot.docs.length}');
+
+      List<Map<String, dynamic>> budgets = [];
+      for (var doc in snapshot.docs) {
+        final data = doc.data();
+        print(
+          'Budget: ${data['budget_name']} - Status: ${data['status']} - Company: ${data['company_id']}',
+        );
+        budgets.add(data);
+      }
+
+      return budgets;
+    } catch (e) {
+      print('Error in test method: $e');
+      return [];
     }
   }
 }

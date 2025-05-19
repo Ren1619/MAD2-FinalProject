@@ -1,3 +1,4 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../services/firebase_auth_service.dart';
@@ -64,31 +65,57 @@ class _BudgetsPageState extends State<BudgetsPage>
   Future<void> _loadBudgets() async {
     if (_userData == null) return;
 
-    // Don't show loading spinner if we're just refreshing
-    if (!_isRefreshing) {
-      setState(() => _isLoading = true);
-    }
+    setState(() => _isLoading = true);
 
     try {
-      final budgetService = Provider.of<FirebaseBudgetService>(
-        context,
-        listen: false,
-      );
+      // Direct Firestore access for testing
+      final FirebaseFirestore firestore = FirebaseFirestore.instance;
+      final companyId = _userData!['company_id'];
 
-      // Load budgets for each status
-      for (String status in _budgetsByStatus.keys) {
-        final budgets = await budgetService.getBudgetsByStatus(status);
-        setState(() {
-          _budgetsByStatus[status] = budgets;
-        });
+      print('Loading budgets for company: $companyId');
+
+      // Get all budgets for the company
+      final snapshot =
+          await firestore
+              .collection('budgets')
+              .where('company_id', isEqualTo: companyId)
+              .get();
+
+      print('Found ${snapshot.docs.length} total budgets');
+
+      // Organize by status
+      final Map<String, List<Map<String, dynamic>>> budgetsByStatus = {
+        'Pending for Approval': [],
+        'Active': [],
+        'Completed': [],
+        'For Revision': [],
+      };
+
+      for (var doc in snapshot.docs) {
+        final data = doc.data();
+        final status = data['status'] ?? 'Unknown';
+
+        print('Budget: ${data['budget_name']} - Status: $status');
+
+        if (budgetsByStatus.containsKey(status)) {
+          budgetsByStatus[status]!.add(data);
+        }
       }
-    } catch (e) {
-      _showErrorSnackBar('Error loading budgets: $e');
-    } finally {
+
       setState(() {
+        _budgetsByStatus = budgetsByStatus;
         _isLoading = false;
-        _isRefreshing = false;
       });
+
+      print('Budget counts by status:');
+      budgetsByStatus.forEach((status, budgets) {
+        print('  $status: ${budgets.length}');
+      });
+    } catch (e) {
+      print('Error loading budgets: $e');
+      print('Stack trace: ${StackTrace.current}');
+      setState(() => _isLoading = false);
+      _showErrorSnackBar('Error loading budgets: $e');
     }
   }
 
