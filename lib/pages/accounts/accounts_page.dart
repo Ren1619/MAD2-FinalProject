@@ -47,19 +47,34 @@ class _AccountsPageState extends State<AccountsPage> {
       );
       final userData = await authService.currentUser;
 
+      print('Current user data: $userData'); // Debug log
+
       if (userData != null) {
         final companyId = userData['company_id'];
+        print('Loading accounts for company: $companyId'); // Debug log
+
         final accounts = await authService.getAccountsByCompany(companyId);
+        print('Loaded ${accounts.length} accounts: $accounts'); // Debug log
 
         setState(() {
           _accounts = accounts;
           _filteredAccounts = accounts;
           _isLoading = false;
+
+          // Reset filters when loading accounts
+          _searchQuery = '';
+          _statusFilter = 'All';
+          _roleFilter = 'All';
         });
 
-        _applyFilters();
+        // Don't apply filters immediately, let user see all accounts first
+        // _applyFilters();
+      } else {
+        print('No user data found');
+        setState(() => _isLoading = false);
       }
     } catch (e) {
+      print('Error in _loadAccounts: $e'); // Debug log
       setState(() => _isLoading = false);
       _showErrorSnackBar('Error loading accounts: $e');
     }
@@ -617,51 +632,69 @@ class _CreateAccountDialogState extends State<_CreateAccountDialog> {
         listen: false,
       );
       final userData = await authService.currentUser;
+      print('Admin user data: $userData'); // Debug log
 
       if (userData != null) {
-        try {
-          // Use the new method that handles logout/re-authentication
-          final success = await authService.createUserAccount(
-            firstName: _firstNameController.text.trim(),
-            lastName: _lastNameController.text.trim(),
-            email: _emailController.text.trim(),
-            password: _passwordController.text,
-            role: _selectedRole,
-            phone: _phoneController.text.trim(),
-            companyId: userData['company_id'],
-          );
+        final companyId = userData['company_id'];
+        final adminEmail = userData['email'];
+        print('Creating account with company_id: $companyId'); // Debug log
 
-          if (success) {
-            widget.onAccountCreated();
+        // Create the account
+        final success = await authService.createUserAccount(
+          firstName: _firstNameController.text.trim(),
+          lastName: _lastNameController.text.trim(),
+          email: _emailController.text.trim(),
+          password: _passwordController.text,
+          role: _selectedRole,
+          phone: _phoneController.text.trim(),
+          companyId: companyId,
+        );
+
+        if (success) {
+          // Account created successfully, admin was signed out
+          if (mounted) {
+            // Close the create account dialog
+            Navigator.pop(context);
+
+            // Show re-authentication dialog
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (context.mounted) {
+                _showReauthenticationDialog(adminEmail);
+              }
+            });
+          }
+        } else {
+          // Account creation failed
+          if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
-                content: const Text('Account created successfully'),
-                backgroundColor: Colors.green[700],
+                content: const Text(
+                  'Failed to create account. Please try again.',
+                ),
+                backgroundColor: Colors.red[700],
                 behavior: SnackBarBehavior.floating,
               ),
             );
           }
-        } catch (e) {
-          if (e.toString() == 'ACCOUNT_CREATED_REAUTHENTICATE') {
-            // Account was created successfully, but admin needs to re-authenticate
-            Navigator.pop(context); // Close the dialog first
-            _showReauthenticationDialog(userData['email']);
-            return; // Exit early to prevent showing error message
-          } else {
-            throw e; // Re-throw other errors to be handled below
-          }
         }
+      } else {
+        throw 'Cannot get current user data';
       }
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Error creating account: $e'),
-          backgroundColor: Colors.red[700],
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
+      print('Error in _createAccount: $e'); // Debug log
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error creating account: $e'),
+            backgroundColor: Colors.red[700],
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
     } finally {
-      setState(() => _isLoading = false);
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
     }
   }
 

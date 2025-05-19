@@ -20,16 +20,26 @@ class FirebaseAuthService {
   // Get current user data from Firestore
   Future<Map<String, dynamic>?> get currentUser async {
     final user = _auth.currentUser;
-    if (user == null) return null;
+    if (user == null) {
+      print('No Firebase user found');
+      return null;
+    }
 
     try {
+      print('Getting user data for UID: ${user.uid}');
       final doc = await _firestore.collection('accounts').doc(user.uid).get();
+
       if (doc.exists) {
-        return {'id': doc.id, ...doc.data()!};
+        final data = doc.data()!;
+        print('User data found: $data');
+        // Make sure to include the document ID as account_id
+        return {'account_id': doc.id, ...data};
+      } else {
+        print('User document does not exist in Firestore');
+        return null;
       }
-      return null;
     } catch (e) {
-      print('Error getting current user: $e');
+      print('Error getting current user data: $e');
       return null;
     }
   }
@@ -159,7 +169,6 @@ class FirebaseAuthService {
       if (currentUserData == null || currentUserData['role'] != ROLE_ADMIN) {
         throw 'Only administrators can create accounts';
       }
-
 
       // Validate role (admin cannot create another admin)
       if (role == ROLE_ADMIN) {
@@ -313,14 +322,46 @@ class FirebaseAuthService {
     String companyId,
   ) async {
     try {
+      print('Fetching accounts for company: $companyId'); // Debug log
+
+      // First, try without orderBy to see if it's an index issue
       final snapshot =
           await _firestore
               .collection('accounts')
               .where('company_id', isEqualTo: companyId)
-              .orderBy('created_at', descending: true)
               .get();
 
-      return snapshot.docs.map((doc) => {'id': doc.id, ...doc.data()}).toList();
+      print('Found ${snapshot.docs.length} accounts'); // Debug log
+
+      final accounts =
+          snapshot.docs.map((doc) {
+            final data = doc.data();
+            print('Account data: $data'); // Debug log
+            return {'id': doc.id, ...data};
+          }).toList();
+
+      // Sort manually in Dart instead of Firestore
+      accounts.sort((a, b) {
+        final aTime = a['created_at'];
+        final bTime = b['created_at'];
+
+        if (aTime == null && bTime == null) return 0;
+        if (aTime == null) return 1;
+        if (bTime == null) return -1;
+
+        // Handle both Timestamp and String
+        DateTime dateA, dateB;
+        try {
+          dateA = aTime is Timestamp ? aTime.toDate() : DateTime.parse(aTime);
+          dateB = bTime is Timestamp ? bTime.toDate() : DateTime.parse(bTime);
+          return dateB.compareTo(dateA); // Descending order
+        } catch (e) {
+          print('Error parsing dates: $e');
+          return 0;
+        }
+      });
+
+      return accounts;
     } catch (e) {
       print('Error getting accounts: $e');
       return [];
