@@ -143,7 +143,7 @@ class FirebaseAuthService {
     }
   }
 
-  // Create user account (by admin)
+  // UPDATED: Create user account without auto-login (Option 2)
   Future<bool> createUserAccount({
     required String firstName,
     required String lastName,
@@ -160,6 +160,7 @@ class FirebaseAuthService {
         throw 'Only administrators can create accounts';
       }
 
+
       // Validate role (admin cannot create another admin)
       if (role == ROLE_ADMIN) {
         throw 'Cannot create another administrator account';
@@ -171,10 +172,13 @@ class FirebaseAuthService {
         password: password,
       );
 
+      String? newUserUid;
       if (result.user != null) {
-        // Create account document in Firestore
-        await _firestore.collection('accounts').doc(result.user!.uid).set({
-          'account_id': result.user!.uid,
+        newUserUid = result.user!.uid;
+
+        // Create account document in Firestore for the new user
+        await _firestore.collection('accounts').doc(newUserUid).set({
+          'account_id': newUserUid,
           'company_id': companyId,
           'f_name': firstName,
           'l_name': lastName,
@@ -185,22 +189,62 @@ class FirebaseAuthService {
           'created_at': FieldValue.serverTimestamp(),
         });
 
-        // Log activity
-        await _logActivity(
-          'New account created: $email with role: $role',
-          'Account Management',
-          companyId,
-        );
+        // Sign out the newly created user
+        await _auth.signOut();
 
-        return true;
+        // Log activity - do this after signing out
+        await _firestore.collection('logs').add({
+          'log_id': UuidGenerator.generateUuid(),
+          'log_desc': 'New account created: $email with role: $role',
+          'type': 'Account Management',
+          'company_id': companyId,
+          'user_id': currentUserData['account_id'],
+          'created_at': FieldValue.serverTimestamp(),
+        });
+
+        // Throw special error to trigger re-authentication dialog
+        throw 'ACCOUNT_CREATED_REAUTHENTICATE';
       }
       return false;
     } catch (e) {
       print('Error creating user account: $e');
-      // If user was created but Firestore failed, delete the user
-      if (_auth.currentUser != null && _auth.currentUser!.email == email) {
-        await _auth.currentUser!.delete();
+
+      // If the error is our special re-authentication signal, don't treat it as an error
+      if (e.toString() == 'ACCOUNT_CREATED_REAUTHENTICATE') {
+        rethrow; // Re-throw to be handled by the UI
       }
+
+      // If user was created but Firestore failed, delete the user
+      try {
+        final currentAuthUser = _auth.currentUser;
+        if (currentAuthUser != null && currentAuthUser.email == email) {
+          await currentAuthUser.delete();
+        }
+      } catch (deleteError) {
+        print('Error deleting failed user account: $deleteError');
+      }
+      throw e;
+    }
+  }
+
+  // NEW: Method to re-authenticate admin after creating an account
+  Future<bool> reauthenticateAdmin(String email, String password) async {
+    try {
+      final UserCredential result = await _auth.signInWithEmailAndPassword(
+        email: email,
+        password: password,
+      );
+
+      if (result.user != null) {
+        // Verify this is actually an admin
+        final userData = await currentUser;
+        if (userData != null && userData['role'] == ROLE_ADMIN) {
+          return true;
+        }
+      }
+      return false;
+    } catch (e) {
+      print('Error re-authenticating admin: $e');
       throw e;
     }
   }

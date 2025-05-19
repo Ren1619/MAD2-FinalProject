@@ -619,25 +619,37 @@ class _CreateAccountDialogState extends State<_CreateAccountDialog> {
       final userData = await authService.currentUser;
 
       if (userData != null) {
-        final success = await authService.createUserAccount(
-          firstName: _firstNameController.text.trim(),
-          lastName: _lastNameController.text.trim(),
-          email: _emailController.text.trim(),
-          password: _passwordController.text,
-          role: _selectedRole,
-          phone: _phoneController.text.trim(),
-          companyId: userData['company_id'],
-        );
-
-        if (success) {
-          widget.onAccountCreated();
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: const Text('Account created successfully'),
-              backgroundColor: Colors.green[700],
-              behavior: SnackBarBehavior.floating,
-            ),
+        try {
+          // Use the new method that handles logout/re-authentication
+          final success = await authService.createUserAccount(
+            firstName: _firstNameController.text.trim(),
+            lastName: _lastNameController.text.trim(),
+            email: _emailController.text.trim(),
+            password: _passwordController.text,
+            role: _selectedRole,
+            phone: _phoneController.text.trim(),
+            companyId: userData['company_id'],
           );
+
+          if (success) {
+            widget.onAccountCreated();
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: const Text('Account created successfully'),
+                backgroundColor: Colors.green[700],
+                behavior: SnackBarBehavior.floating,
+              ),
+            );
+          }
+        } catch (e) {
+          if (e.toString() == 'ACCOUNT_CREATED_REAUTHENTICATE') {
+            // Account was created successfully, but admin needs to re-authenticate
+            Navigator.pop(context); // Close the dialog first
+            _showReauthenticationDialog(userData['email']);
+            return; // Exit early to prevent showing error message
+          } else {
+            throw e; // Re-throw other errors to be handled below
+          }
         }
       }
     } catch (e) {
@@ -653,6 +665,256 @@ class _CreateAccountDialogState extends State<_CreateAccountDialog> {
     }
   }
 
+  // Show re-authentication dialog
+  void _showReauthenticationDialog(String adminEmail) {
+    final passwordController = TextEditingController();
+    bool obscurePassword = true;
+    bool isLoading = false;
+
+    showDialog(
+      context: context,
+      barrierDismissible: false, // Prevent dismissing without re-authentication
+      builder:
+          (BuildContext dialogContext) => StatefulBuilder(
+            builder:
+                (context, setDialogState) => AlertDialog(
+                  title: Row(
+                    children: [
+                      Icon(Icons.check_circle, color: Colors.green, size: 28),
+                      const SizedBox(width: 12),
+                      Text(
+                        'Account Created!',
+                        style: TextStyle(color: AppTheme.primaryColor),
+                      ),
+                    ],
+                  ),
+                  content: SizedBox(
+                    width: 350,
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: Colors.green[50],
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(color: Colors.green[200]!),
+                          ),
+                          child: Row(
+                            children: [
+                              Icon(
+                                Icons.info_outline,
+                                color: Colors.green[700],
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  'The account has been created successfully!',
+                                  style: TextStyle(
+                                    color: Colors.green[700],
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+                        const Text(
+                          'Please enter your admin password to continue managing accounts:',
+                          style: TextStyle(fontSize: 14),
+                        ),
+                        const SizedBox(height: 16),
+                        TextField(
+                          controller: passwordController,
+                          obscureText: obscurePassword,
+                          decoration: InputDecoration(
+                            labelText: 'Your Admin Password',
+                            hintText: 'Enter your password',
+                            border: const OutlineInputBorder(),
+                            prefixIcon: const Icon(Icons.lock_outline),
+                            suffixIcon: IconButton(
+                              icon: Icon(
+                                obscurePassword
+                                    ? Icons.visibility_off
+                                    : Icons.visibility,
+                              ),
+                              onPressed: () {
+                                setDialogState(
+                                  () => obscurePassword = !obscurePassword,
+                                );
+                              },
+                            ),
+                          ),
+                          autofocus: true,
+                          onSubmitted: (_) {
+                            if (passwordController.text.isNotEmpty &&
+                                !isLoading) {
+                              _handleReauthentication(
+                                passwordController.text,
+                                adminEmail,
+                                setDialogState,
+                                dialogContext,
+                              );
+                            }
+                          },
+                        ),
+                        const SizedBox(height: 12),
+                        Container(
+                          padding: const EdgeInsets.all(8),
+                          decoration: BoxDecoration(
+                            color: Colors.blue[50],
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          child: Row(
+                            children: [
+                              Icon(
+                                Icons.lightbulb_outline,
+                                color: Colors.blue[700],
+                                size: 16,
+                              ),
+                              const SizedBox(width: 6),
+                              Expanded(
+                                child: Text(
+                                  'This is required because creating an account signs you out temporarily.',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: Colors.blue[700],
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  actions: [
+                    TextButton(
+                      onPressed:
+                          isLoading
+                              ? null
+                              : () {
+                                // If they cancel, redirect to login page
+                                Navigator.of(context).pushNamedAndRemoveUntil(
+                                  '/login',
+                                  (route) => false,
+                                );
+                              },
+                      child: const Text('Logout Instead'),
+                    ),
+                    ElevatedButton(
+                      onPressed:
+                          isLoading
+                              ? null
+                              : () {
+                                if (passwordController.text.isNotEmpty) {
+                                  _handleReauthentication(
+                                    passwordController.text,
+                                    adminEmail,
+                                    setDialogState,
+                                    dialogContext,
+                                  );
+                                }
+                              },
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppTheme.primaryColor,
+                        foregroundColor: Colors.white,
+                      ),
+                      child:
+                          isLoading
+                              ? const SizedBox(
+                                width: 20,
+                                height: 20,
+                                child: CircularProgressIndicator(
+                                  color: Colors.white,
+                                  strokeWidth: 2,
+                                ),
+                              )
+                              : const Text('Continue'),
+                    ),
+                  ],
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                ),
+          ),
+    ).then((_) {
+      // Clean up controller when dialog is closed
+      passwordController.dispose();
+    });
+  }
+
+  Future<void> _handleReauthentication(
+    String password,
+    String adminEmail,
+    StateSetter setDialogState,
+    BuildContext dialogContext,
+  ) async {
+    setDialogState(() {});
+    bool isLoading = true;
+    setDialogState(() {});
+
+    try {
+      final authService = Provider.of<FirebaseAuthService>(
+        context,
+        listen: false,
+      );
+
+      final success = await authService.reauthenticateAdmin(
+        adminEmail,
+        password,
+      );
+
+      if (success) {
+        Navigator.pop(dialogContext); // Close re-auth dialog
+        widget.onAccountCreated();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Row(
+              children: [
+                const Icon(Icons.check_circle, color: Colors.white),
+                const SizedBox(width: 8),
+                const Text('Account created and signed back in successfully!'),
+              ],
+            ),
+            backgroundColor: Colors.green[700],
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(10),
+            ),
+          ),
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: const Text('Invalid password. Please try again.'),
+            backgroundColor: Colors.red[700],
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(10),
+            ),
+          ),
+        );
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error: $e'),
+          backgroundColor: Colors.red[700],
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(10),
+          ),
+        ),
+      );
+    } finally {
+      isLoading = false;
+      setDialogState(() {});
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
@@ -661,10 +923,7 @@ class _CreateAccountDialogState extends State<_CreateAccountDialog> {
         style: TextStyle(color: AppTheme.primaryColor),
       ),
       content: ConstrainedBox(
-        constraints: const BoxConstraints(
-          maxWidth: 400, // Set maximum width
-          maxHeight: 600, // Set maximum height
-        ),
+        constraints: const BoxConstraints(maxWidth: 400, maxHeight: 600),
         child: IntrinsicHeight(
           child: Form(
             key: _formKey,
@@ -763,7 +1022,7 @@ class _CreateAccountDialogState extends State<_CreateAccountDialog> {
                   ),
                   const SizedBox(height: 16),
 
-                  // Role Dropdown - FIXED VERSION
+                  // Role Dropdown
                   Container(
                     width: double.infinity,
                     child: DropdownButtonFormField<String>(
@@ -777,10 +1036,9 @@ class _CreateAccountDialogState extends State<_CreateAccountDialog> {
                         isDense: true,
                       ),
                       value: _selectedRole,
-                      isExpanded: true, // This prevents overflow
+                      isExpanded: true,
                       items:
                           FirebaseAuthService.getAvailableRoles().map((role) {
-                            // Shorten long role names for display
                             String displayRole = role;
                             if (role ==
                                 'Financial Planning and Budgeting Officer') {
@@ -806,7 +1064,6 @@ class _CreateAccountDialogState extends State<_CreateAccountDialog> {
                         }
                         return null;
                       },
-                      // Ensure dropdown has proper styling
                       style: const TextStyle(
                         fontSize: 14,
                         color: Colors.black87,
