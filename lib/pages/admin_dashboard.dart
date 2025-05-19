@@ -19,9 +19,11 @@ class AdminDashboard extends StatefulWidget {
 }
 
 class _AdminDashboardState extends State<AdminDashboard> {
+  final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
   int _selectedIndex = 0;
   Map<String, dynamic>? _userData;
   bool _isLoading = true;
+
   @override
   void initState() {
     super.initState();
@@ -39,8 +41,6 @@ class _AdminDashboardState extends State<AdminDashboard> {
       _isLoading = false;
     });
   }
-
-  
 
   void _onItemSelected(int index) {
     setState(() {
@@ -86,20 +86,35 @@ class _AdminDashboardState extends State<AdminDashboard> {
     );
   }
 
+  void _openDrawer() {
+    print('Opening drawer from AdminDashboard');
+    _scaffoldKey.currentState?.openDrawer();
+  }
+
   Widget _buildMainContent() {
     switch (_selectedIndex) {
       case 0:
-        return const AccountsPage(); // Accounts page as landing page
+        return AccountsPageWithDrawer(
+          onOpenDrawer: _openDrawer,
+          userData: _userData,
+        );
       case 1:
-        return const BudgetsPage(); // Budgets page
+        return BudgetsPageWithDrawer(
+          onOpenDrawer: _openDrawer,
+          userData: _userData,
+        );
       case 2:
-        return const LogsPage(); // Logs page
+        return LogsPageWithDrawer(
+          onOpenDrawer: _openDrawer,
+          userData: _userData,
+        );
       default:
-        return const AccountsPage(); // Default to accounts page
+        return AccountsPageWithDrawer(
+          onOpenDrawer: _openDrawer,
+          userData: _userData,
+        );
     }
   }
-
-  
 
   @override
   Widget build(BuildContext context) {
@@ -108,25 +123,72 @@ class _AdminDashboardState extends State<AdminDashboard> {
     }
 
     return Scaffold(
+      key: _scaffoldKey,
       backgroundColor: AppTheme.scaffoldBackground,
-      body: Row(
-        children: [
-          // Sidebar Navigation
-          SidebarNavigation(
-            selectedIndex: _selectedIndex,
-            onItemSelected: _onItemSelected,
-            userName:
-                _userData != null
-                    ? '${_userData!['f_name']} ${_userData!['l_name']}'
-                    : null,
-            userEmail: _userData?['email'],
-            onLogout: _onLogout,
-          ),
-
-          // Main Content Area
-          Expanded(child: _buildMainContent()),
-        ],
+      drawer: SidebarNavigation(
+        selectedIndex: _selectedIndex,
+        onItemSelected: _onItemSelected,
+        userName:
+            _userData != null
+                ? '${_userData!['f_name']} ${_userData!['l_name']}'
+                : null,
+        userEmail: _userData?['email'],
+        onLogout: _onLogout,
       ),
+      body: _buildMainContent(),
     );
+  }
+}
+
+// PUT THE PAGE WRAPPERS HERE - Right after the AdminDashboard class
+
+class AccountsPageWithDrawer extends StatelessWidget {
+  final VoidCallback onOpenDrawer;
+  final Map<String, dynamic>? userData;
+
+  const AccountsPageWithDrawer({
+    super.key,
+    required this.onOpenDrawer,
+    this.userData,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    // You'll need to modify AccountsPage to accept these parameters
+    return AccountsPage(onOpenDrawer: onOpenDrawer, userData: userData);
+  }
+}
+
+class BudgetsPageWithDrawer extends StatelessWidget {
+  final VoidCallback onOpenDrawer;
+  final Map<String, dynamic>? userData;
+
+  const BudgetsPageWithDrawer({
+    super.key,
+    required this.onOpenDrawer,
+    this.userData,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    // You'll need to modify BudgetsPage to accept these parameters
+    return BudgetsPage(onOpenDrawer: onOpenDrawer, userData: userData);
+  }
+}
+
+class LogsPageWithDrawer extends StatelessWidget {
+  final VoidCallback onOpenDrawer;
+  final Map<String, dynamic>? userData;
+
+  const LogsPageWithDrawer({
+    super.key,
+    required this.onOpenDrawer,
+    this.userData,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    // You'll need to modify LogsPage to accept these parameters
+    return LogsPage(onOpenDrawer: onOpenDrawer, userData: userData);
   }
 }

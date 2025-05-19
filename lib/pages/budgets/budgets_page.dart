@@ -8,18 +8,21 @@ import 'budget_details_page.dart';
 import 'create_budget_page.dart';
 
 class BudgetsPage extends StatefulWidget {
-  const BudgetsPage({super.key});
+  final VoidCallback? onOpenDrawer;
+  final Map<String, dynamic>? userData;
+  const BudgetsPage({super.key, this.onOpenDrawer, this.userData});
 
   @override
   State<BudgetsPage> createState() => _BudgetsPageState();
 }
 
-class _BudgetsPageState extends State<BudgetsPage> with SingleTickerProviderStateMixin {
+class _BudgetsPageState extends State<BudgetsPage>
+    with SingleTickerProviderStateMixin {
   late TabController _tabController;
-  
+
   Map<String, dynamic>? _userData;
   bool _isLoading = true;
-  
+
   // Budget lists by status
   Map<String, List<Map<String, dynamic>>> _budgetsByStatus = {
     'Pending for Approval': [],
@@ -42,13 +45,16 @@ class _BudgetsPageState extends State<BudgetsPage> with SingleTickerProviderStat
   }
 
   Future<void> _loadUserData() async {
-    final authService = Provider.of<FirebaseAuthService>(context, listen: false);
+    final authService = Provider.of<FirebaseAuthService>(
+      context,
+      listen: false,
+    );
     final userData = await authService.currentUser;
-    
+
     setState(() {
       _userData = userData;
     });
-    
+
     await _loadBudgets();
     setState(() => _isLoading = false);
   }
@@ -57,8 +63,11 @@ class _BudgetsPageState extends State<BudgetsPage> with SingleTickerProviderStat
     if (_userData == null) return;
 
     try {
-      final budgetService = Provider.of<FirebaseBudgetService>(context, listen: false);
-      
+      final budgetService = Provider.of<FirebaseBudgetService>(
+        context,
+        listen: false,
+      );
+
       // Load budgets for each status
       for (String status in _budgetsByStatus.keys) {
         final budgets = await budgetService.getBudgetsByStatus(status);
@@ -89,12 +98,15 @@ class _BudgetsPageState extends State<BudgetsPage> with SingleTickerProviderStat
 
   Future<void> _approveBudget(Map<String, dynamic> budget) async {
     try {
-      final budgetService = Provider.of<FirebaseBudgetService>(context, listen: false);
+      final budgetService = Provider.of<FirebaseBudgetService>(
+        context,
+        listen: false,
+      );
       final success = await budgetService.updateBudgetStatus(
         budget['budget_id'],
         'Active',
       );
-      
+
       if (success) {
         _showSuccessSnackBar('Budget approved successfully');
         _loadBudgets();
@@ -109,13 +121,14 @@ class _BudgetsPageState extends State<BudgetsPage> with SingleTickerProviderStat
   Future<void> _markForRevision(Map<String, dynamic> budget) async {
     showDialog(
       context: context,
-      builder: (context) => _RevisionNotesDialog(
-        budget: budget,
-        onRevisionMarked: () {
-          Navigator.pop(context);
-          _loadBudgets();
-        },
-      ),
+      builder:
+          (context) => _RevisionNotesDialog(
+            budget: budget,
+            onRevisionMarked: () {
+              Navigator.pop(context);
+              _loadBudgets();
+            },
+          ),
     );
   }
 
@@ -146,7 +159,8 @@ class _BudgetsPageState extends State<BudgetsPage> with SingleTickerProviderStat
   }
 
   bool _canApproveBudgets() {
-    return _userData?['role'] == 'Budget Manager' || _userData?['role'] == 'Administrator';
+    return _userData?['role'] == 'Budget Manager' ||
+        _userData?['role'] == 'Administrator';
   }
 
   String _formatCurrency(double amount) {
@@ -155,7 +169,7 @@ class _BudgetsPageState extends State<BudgetsPage> with SingleTickerProviderStat
 
   String _formatTimestamp(dynamic timestamp) {
     if (timestamp == null) return 'Unknown';
-    
+
     try {
       DateTime dateTime;
       if (timestamp is String) {
@@ -163,7 +177,7 @@ class _BudgetsPageState extends State<BudgetsPage> with SingleTickerProviderStat
       } else {
         dateTime = timestamp.toDate();
       }
-      
+
       return '${dateTime.day}/${dateTime.month}/${dateTime.year}';
     } catch (e) {
       return 'Invalid Date';
@@ -182,6 +196,8 @@ class _BudgetsPageState extends State<BudgetsPage> with SingleTickerProviderStat
       backgroundColor: AppTheme.scaffoldBackground,
       appBar: CustomAppBar(
         title: 'Budget Management',
+        onMenuPressed: widget.onOpenDrawer, // Pass the drawer function
+        userData: widget.userData,
         actions: [
           IconButton(
             icon: const Icon(Icons.refresh),
@@ -229,7 +245,8 @@ class _BudgetsPageState extends State<BudgetsPage> with SingleTickerProviderStat
                     Expanded(
                       child: _buildStatCard(
                         'Pending Approval',
-                        _budgetsByStatus['Pending for Approval']!.length.toString(),
+                        _budgetsByStatus['Pending for Approval']!.length
+                            .toString(),
                         Colors.orange,
                       ),
                     ),
@@ -262,7 +279,7 @@ class _BudgetsPageState extends State<BudgetsPage> with SingleTickerProviderStat
               ],
             ),
           ),
-          
+
           // Tab Bar
           Container(
             color: Colors.white,
@@ -280,7 +297,7 @@ class _BudgetsPageState extends State<BudgetsPage> with SingleTickerProviderStat
               ],
             ),
           ),
-          
+
           // Tab Content
           Expanded(
             child: TabBarView(
@@ -319,10 +336,7 @@ class _BudgetsPageState extends State<BudgetsPage> with SingleTickerProviderStat
           const SizedBox(height: 4),
           Text(
             title,
-            style: TextStyle(
-              fontSize: 12,
-              color: AppTheme.textSecondary,
-            ),
+            style: TextStyle(fontSize: 12, color: AppTheme.textSecondary),
             textAlign: TextAlign.center,
           ),
         ],
@@ -335,13 +349,15 @@ class _BudgetsPageState extends State<BudgetsPage> with SingleTickerProviderStat
 
     if (budgets.isEmpty) {
       return EmptyStateWidget(
-        message: status == 'Pending for Approval' 
-            ? 'No budgets pending approval.\n${_canCreateBudgets() ? 'Create a new budget to get started.' : 'Budgets will appear here when created by Financial Officers.'}'
-            : 'No $status budgets found.',
+        message:
+            status == 'Pending for Approval'
+                ? 'No budgets pending approval.\n${_canCreateBudgets() ? 'Create a new budget to get started.' : 'Budgets will appear here when created by Financial Officers.'}'
+                : 'No $status budgets found.',
         icon: Icons.account_balance_wallet_outlined,
-        onActionPressed: (status == 'Pending for Approval' && _canCreateBudgets()) 
-            ? _showCreateBudgetPage 
-            : null,
+        onActionPressed:
+            (status == 'Pending for Approval' && _canCreateBudgets())
+                ? _showCreateBudgetPage
+                : null,
         actionLabel: 'Create Budget',
       );
     }
@@ -360,7 +376,8 @@ class _BudgetsPageState extends State<BudgetsPage> with SingleTickerProviderStat
     final totalExpenses = (budget['total_expenses'] as num?)?.toDouble() ?? 0.0;
     final remainingAmount = budgetAmount - totalExpenses;
     final expenseCount = budget['expense_count'] as int? ?? 0;
-    final percentageUsed = budgetAmount > 0 ? (totalExpenses / budgetAmount) : 0.0;
+    final percentageUsed =
+        budgetAmount > 0 ? (totalExpenses / budgetAmount) : 0.0;
 
     Color progressColor = Colors.green;
     if (percentageUsed > 0.8) {
@@ -451,7 +468,7 @@ class _BudgetsPageState extends State<BudgetsPage> with SingleTickerProviderStat
 
             if (status == 'Active' || status == 'Completed') ...[
               const SizedBox(height: 16),
-              
+
               // Progress Bar
               Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -495,20 +512,18 @@ class _BudgetsPageState extends State<BudgetsPage> with SingleTickerProviderStat
                 const SizedBox(width: 4),
                 Text(
                   'Created by: ${budget['created_by_name'] ?? 'Unknown'}',
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: AppTheme.textSecondary,
-                  ),
+                  style: TextStyle(fontSize: 12, color: AppTheme.textSecondary),
                 ),
                 const Spacer(),
-                Icon(Icons.calendar_today, size: 16, color: AppTheme.textSecondary),
+                Icon(
+                  Icons.calendar_today,
+                  size: 16,
+                  color: AppTheme.textSecondary,
+                ),
                 const SizedBox(width: 4),
                 Text(
                   _formatTimestamp(budget['created_at']),
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: AppTheme.textSecondary,
-                  ),
+                  style: TextStyle(fontSize: 12, color: AppTheme.textSecondary),
                 ),
               ],
             ),
@@ -572,19 +587,13 @@ class _BudgetsPageState extends State<BudgetsPage> with SingleTickerProviderStat
         const SizedBox(height: 4),
         Text(
           value,
-          style: const TextStyle(
-            fontSize: 16,
-            fontWeight: FontWeight.bold,
-          ),
+          style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
           textAlign: TextAlign.center,
         ),
         const SizedBox(height: 2),
         Text(
           label,
-          style: TextStyle(
-            fontSize: 12,
-            color: AppTheme.textSecondary,
-          ),
+          style: TextStyle(fontSize: 12, color: AppTheme.textSecondary),
           textAlign: TextAlign.center,
         ),
       ],
@@ -620,15 +629,19 @@ class _RevisionNotesDialogState extends State<_RevisionNotesDialog> {
     setState(() => _isLoading = true);
 
     try {
-      final budgetService = Provider.of<FirebaseBudgetService>(context, listen: false);
+      final budgetService = Provider.of<FirebaseBudgetService>(
+        context,
+        listen: false,
+      );
       final success = await budgetService.updateBudgetStatus(
         widget.budget['budget_id'],
         'For Revision',
-        notes: _notesController.text.trim().isNotEmpty 
-            ? _notesController.text.trim() 
-            : null,
+        notes:
+            _notesController.text.trim().isNotEmpty
+                ? _notesController.text.trim()
+                : null,
       );
-      
+
       if (success) {
         widget.onRevisionMarked();
         ScaffoldMessenger.of(context).showSnackBar(
@@ -683,17 +696,15 @@ class _RevisionNotesDialogState extends State<_RevisionNotesDialog> {
               maxLines: 4,
               decoration: const InputDecoration(
                 labelText: 'Revision Notes (Optional)',
-                hintText: 'Enter reasons for revision or suggestions for improvement...',
+                hintText:
+                    'Enter reasons for revision or suggestions for improvement...',
                 border: OutlineInputBorder(),
               ),
             ),
             const SizedBox(height: 8),
             Text(
               'This budget will be moved to "For Revision" status and the creator will be notified.',
-              style: TextStyle(
-                fontSize: 12,
-                color: AppTheme.textSecondary,
-              ),
+              style: TextStyle(fontSize: 12, color: AppTheme.textSecondary),
             ),
           ],
         ),
@@ -706,13 +717,20 @@ class _RevisionNotesDialogState extends State<_RevisionNotesDialog> {
         ElevatedButton(
           onPressed: _isLoading ? null : _markForRevision,
           style: ElevatedButton.styleFrom(backgroundColor: Colors.orange),
-          child: _isLoading
-              ? const SizedBox(
-                  width: 20,
-                  height: 20,
-                  child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
-                )
-              : const Text('Mark for Revision', style: TextStyle(color: Colors.white)),
+          child:
+              _isLoading
+                  ? const SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(
+                      color: Colors.white,
+                      strokeWidth: 2,
+                    ),
+                  )
+                  : const Text(
+                    'Mark for Revision',
+                    style: TextStyle(color: Colors.white),
+                  ),
         ),
       ],
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),

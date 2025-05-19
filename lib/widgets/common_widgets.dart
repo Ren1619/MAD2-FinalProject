@@ -1,5 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:moneyger_finalproject/main.dart';
+import 'package:moneyger_finalproject/pages/profile/profile_page.dart';
+import 'package:moneyger_finalproject/services/firebase_auth_service.dart';
 import '../theme.dart';
+import 'package:provider/provider.dart';
 
 // A collection of common widgets used throughout the app
 
@@ -297,17 +301,24 @@ class _HoverCardState extends State<HoverCard> {
 class CustomAppBar extends StatelessWidget implements PreferredSizeWidget {
   final String title;
   final List<Widget>? actions;
-  final VoidCallback? onMenuPressed;
+  final VoidCallback? onMenuPressed; // This will be the drawer opening function
+  final bool showProfileMenu;
+  final Map<String, dynamic>? userData;
 
   const CustomAppBar({
     required this.title,
     this.actions,
     this.onMenuPressed,
+    this.showProfileMenu = true,
+    this.userData,
     Key? key,
   }) : super(key: key);
 
   @override
   Widget build(BuildContext context) {
+    // Get user data from context if not provided
+    final user = userData ?? context.watch<AppStateNotifier>().currentUser;
+
     return AppBar(
       backgroundColor: Colors.white,
       elevation: 2,
@@ -320,11 +331,134 @@ class CustomAppBar extends StatelessWidget implements PreferredSizeWidget {
           fontSize: 20,
         ),
       ),
-      leading: IconButton(
-        icon: Icon(Icons.menu, color: AppTheme.primaryColor),
-        onPressed: onMenuPressed ?? () => Scaffold.of(context).openDrawer(),
-      ),
-      actions: actions ?? [],
+      // Simple menu button that calls the provided function
+      leading:
+          onMenuPressed != null
+              ? IconButton(
+                icon: Icon(Icons.menu, color: AppTheme.primaryColor),
+                onPressed: () {
+                  print('Menu button pressed'); // Debug
+                  onMenuPressed!();
+                },
+                tooltip: 'Open Navigation Menu',
+              )
+              : null,
+      automaticallyImplyLeading: false,
+      actions: [
+        ...(actions ?? []),
+        if (showProfileMenu && user != null)
+          PopupMenuButton<String>(
+            icon: CircleAvatar(
+              backgroundColor: AppTheme.primaryLightColor,
+              child: Text(
+                '${user['f_name']?[0] ?? ''}${user['l_name']?[0] ?? ''}'
+                    .toUpperCase(),
+                style: TextStyle(
+                  color: AppTheme.primaryColor,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+            onSelected: (value) async {
+              switch (value) {
+                case 'profile':
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => const ProfilePage(),
+                    ),
+                  );
+                  break;
+                case 'settings':
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Settings feature coming soon!'),
+                    ),
+                  );
+                  break;
+                case 'logout':
+                  _showLogoutDialog(context);
+                  break;
+              }
+            },
+            itemBuilder:
+                (context) => [
+                  PopupMenuItem(
+                    value: 'profile',
+                    child: Row(
+                      children: [
+                        Icon(Icons.person, color: AppTheme.primaryColor),
+                        const SizedBox(width: 8),
+                        const Text('My Profile'),
+                      ],
+                    ),
+                  ),
+                  PopupMenuItem(
+                    value: 'settings',
+                    child: Row(
+                      children: [
+                        Icon(Icons.settings, color: AppTheme.textSecondary),
+                        const SizedBox(width: 8),
+                        const Text('Settings'),
+                      ],
+                    ),
+                  ),
+                  const PopupMenuDivider(),
+                  PopupMenuItem(
+                    value: 'logout',
+                    child: Row(
+                      children: [
+                        const Icon(Icons.logout, color: Colors.red),
+                        const SizedBox(width: 8),
+                        const Text(
+                          'Logout',
+                          style: TextStyle(color: Colors.red),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+          ),
+      ],
+    );
+  }
+
+  void _showLogoutDialog(BuildContext context) {
+    showDialog(
+      context: context,
+      builder:
+          (context) => AlertDialog(
+            title: Text(
+              'Confirm Logout',
+              style: TextStyle(color: AppTheme.primaryColor),
+            ),
+            content: const Text('Are you sure you want to logout?'),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Cancel'),
+              ),
+              ElevatedButton(
+                onPressed: () async {
+                  Navigator.pop(context);
+                  await context.read<FirebaseAuthService>().signOut();
+                  Navigator.pushNamedAndRemoveUntil(
+                    context,
+                    '/login',
+                    (route) => false,
+                  );
+                },
+                style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+                child: const Text(
+                  'Logout',
+                  style: TextStyle(color: Colors.white),
+                ),
+              ),
+            ],
+          ),
     );
   }
 

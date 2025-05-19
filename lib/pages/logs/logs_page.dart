@@ -6,7 +6,9 @@ import '../../widgets/common_widgets.dart';
 import '../../theme.dart';
 
 class LogsPage extends StatefulWidget {
-  const LogsPage({super.key});
+  final VoidCallback? onOpenDrawer;
+  final Map<String, dynamic>? userData;
+  const LogsPage({super.key, this.onOpenDrawer, this.userData});
 
   @override
   State<LogsPage> createState() => _LogsPageState();
@@ -275,7 +277,11 @@ class _LogsPageState extends State<LogsPage> {
     // Check if user is admin
     if (_userData != null && _userData!['role'] != 'Administrator') {
       return Scaffold(
-        appBar: CustomAppBar(title: 'Activity Logs'),
+        appBar: CustomAppBar(
+          title: 'Activity Logs',
+          onMenuPressed: widget.onOpenDrawer,
+          userData: widget.userData,
+        ),
         body: const EmptyStateWidget(
           message:
               'Access Denied\n\nOnly administrators can view activity logs.',
@@ -292,14 +298,12 @@ class _LogsPageState extends State<LogsPage> {
 
     return Scaffold(
       backgroundColor: AppTheme.scaffoldBackground,
+      // Clean AppBar with only refresh button
       appBar: CustomAppBar(
         title: 'Activity Logs',
+        onMenuPressed: widget.onOpenDrawer,
+        userData: widget.userData,
         actions: [
-          IconButton(
-            icon: const Icon(Icons.download),
-            onPressed: _exportLogs,
-            tooltip: 'Export Logs',
-          ),
           IconButton(
             icon: const Icon(Icons.refresh),
             onPressed: () {
@@ -310,6 +314,19 @@ class _LogsPageState extends State<LogsPage> {
           ),
         ],
       ),
+
+      // Floating Action Button for Export
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: _exportLogs,
+        backgroundColor: AppTheme.primaryColor,
+        foregroundColor: Colors.white,
+        icon: const Icon(Icons.file_download),
+        label: const Text('Export'),
+        tooltip: 'Export Logs',
+      ),
+
+      // Position FAB in bottom right (default position)
+      floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
       body: Column(
         children: [
           // Header Section with Stats
@@ -475,7 +492,6 @@ class _LogsPageState extends State<LogsPage> {
               ],
             ),
           ),
-
           const Divider(height: 1),
 
           // Results Header

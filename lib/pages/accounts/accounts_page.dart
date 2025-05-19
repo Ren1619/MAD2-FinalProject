@@ -7,8 +7,10 @@ import '../../theme.dart';
 import 'account_details_page.dart';
 
 class AccountsPage extends StatefulWidget {
-  const AccountsPage({super.key});
+  final VoidCallback? onOpenDrawer;
+  final Map<String, dynamic>? userData;
 
+  const AccountsPage({super.key, this.onOpenDrawer, this.userData});
   @override
   State<AccountsPage> createState() => _AccountsPageState();
 }
@@ -249,6 +251,8 @@ class _AccountsPageState extends State<AccountsPage> {
       backgroundColor: AppTheme.scaffoldBackground,
       appBar: CustomAppBar(
         title: 'Account Management',
+        onMenuPressed: widget.onOpenDrawer, // Pass the drawer function
+        userData: widget.userData,
         actions: [
           IconButton(
             icon: const Icon(Icons.refresh),
@@ -277,25 +281,40 @@ class _AccountsPageState extends State<AccountsPage> {
                           },
                         ),
                         const SizedBox(height: 16),
-                        // Filter Row
+
+                        // Filter Row with proper styling
                         Row(
                           children: [
+                            // Status Filter
                             Expanded(
+                              flex: 1,
                               child: DropdownButtonFormField<String>(
                                 decoration: const InputDecoration(
                                   labelText: 'Status',
                                   border: OutlineInputBorder(),
                                   contentPadding: EdgeInsets.symmetric(
-                                    horizontal: 12,
+                                    horizontal: 8,
                                     vertical: 8,
                                   ),
+                                  isDense: true,
                                 ),
                                 value: _statusFilter,
+                                isExpanded: true,
+                                // Remove custom style from the field itself
                                 items:
                                     _statusOptions.map((status) {
                                       return DropdownMenuItem(
                                         value: status,
-                                        child: Text(status),
+                                        child: Text(
+                                          status,
+                                          style: TextStyle(
+                                            fontSize: 14,
+                                            color:
+                                                AppTheme
+                                                    .textPrimary, // Ensure text is visible
+                                          ),
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
                                       );
                                     }).toList(),
                                 onChanged: (value) {
@@ -304,23 +323,45 @@ class _AccountsPageState extends State<AccountsPage> {
                                 },
                               ),
                             ),
-                            const SizedBox(width: 16),
+                            const SizedBox(width: 8),
+
+                            // Role Filter
                             Expanded(
+                              flex: 2,
                               child: DropdownButtonFormField<String>(
                                 decoration: const InputDecoration(
                                   labelText: 'Role',
                                   border: OutlineInputBorder(),
                                   contentPadding: EdgeInsets.symmetric(
-                                    horizontal: 12,
+                                    horizontal: 8,
                                     vertical: 8,
                                   ),
+                                  isDense: true,
                                 ),
                                 value: _roleFilter,
+                                isExpanded: true,
+                                // Remove custom style from the field itself
                                 items:
                                     _roleOptions.map((role) {
+                                      // Shorten the role names for display
+                                      String displayRole = role;
+                                      if (role ==
+                                          'Financial Planning and Budgeting Officer') {
+                                        displayRole = 'Financial Officer';
+                                      }
+
                                       return DropdownMenuItem(
                                         value: role,
-                                        child: Text(role),
+                                        child: Text(
+                                          displayRole,
+                                          style: TextStyle(
+                                            fontSize: 14,
+                                            color:
+                                                AppTheme
+                                                    .textPrimary, // Ensure text is visible
+                                          ),
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
                                       );
                                     }).toList(),
                                 onChanged: (value) {
@@ -329,18 +370,24 @@ class _AccountsPageState extends State<AccountsPage> {
                                 },
                               ),
                             ),
-                            const SizedBox(width: 16),
+                            const SizedBox(width: 8),
+
+                            // Create Account Button
                             ElevatedButton.icon(
                               onPressed: _showCreateAccountDialog,
-                              icon: const Icon(Icons.add),
-                              label: const Text('Create Account'),
+                              icon: const Icon(Icons.add, size: 18),
+                              label: const Text(
+                                'Create',
+                                style: TextStyle(fontSize: 14),
+                              ),
                               style: ElevatedButton.styleFrom(
                                 backgroundColor: AppTheme.primaryColor,
                                 foregroundColor: Colors.white,
                                 padding: const EdgeInsets.symmetric(
-                                  horizontal: 16,
-                                  vertical: 12,
+                                  horizontal: 12,
+                                  vertical: 10,
                                 ),
+                                minimumSize: const Size(80, 36),
                               ),
                             ),
                           ],
@@ -348,29 +395,6 @@ class _AccountsPageState extends State<AccountsPage> {
                       ],
                     ),
                   ),
-
-                  const Divider(height: 1),
-
-                  // Results Header
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 8,
-                    ),
-                    color: Colors.grey[50],
-                    child: Row(
-                      children: [
-                        Text(
-                          'Found ${_filteredAccounts.length} account(s)',
-                          style: TextStyle(
-                            fontWeight: FontWeight.w500,
-                            color: AppTheme.textSecondary,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-
                   // Accounts List
                   Expanded(
                     child:
@@ -380,16 +404,12 @@ class _AccountsPageState extends State<AccountsPage> {
                                   _searchQuery.isEmpty &&
                                           _statusFilter == 'All' &&
                                           _roleFilter == 'All'
-                                      ? 'No accounts found.\nCreate your first account to get started.'
-                                      : 'No accounts match your search criteria.',
+                                      ? 'No accounts found.\nUse the "Create Account" button above to get started.'
+                                      : 'No accounts match your search criteria.\nTry adjusting your filters or search terms.',
                               icon: Icons.people_outline,
-                              onActionPressed:
-                                  _searchQuery.isEmpty &&
-                                          _statusFilter == 'All' &&
-                                          _roleFilter == 'All'
-                                      ? _showCreateAccountDialog
-                                      : null,
-                              actionLabel: 'Create Account',
+                              // Remove the action button from empty state
+                              // onActionPressed: null,
+                              // actionLabel: null,
                             )
                             : ListView.builder(
                               padding: const EdgeInsets.all(16),
@@ -640,151 +660,234 @@ class _CreateAccountDialogState extends State<_CreateAccountDialog> {
         'Create New Account',
         style: TextStyle(color: AppTheme.primaryColor),
       ),
-      content: SizedBox(
-        width: 500,
-        child: Form(
-          key: _formKey,
-          child: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Row(
-                  children: [
-                    Expanded(
-                      child: TextFormField(
-                        controller: _firstNameController,
-                        decoration: const InputDecoration(
-                          labelText: 'First Name',
-                          border: OutlineInputBorder(),
+      content: ConstrainedBox(
+        constraints: const BoxConstraints(
+          maxWidth: 400, // Set maximum width
+          maxHeight: 600, // Set maximum height
+        ),
+        child: IntrinsicHeight(
+          child: Form(
+            key: _formKey,
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // First and Last Name Row
+                  Row(
+                    children: [
+                      Expanded(
+                        child: TextFormField(
+                          controller: _firstNameController,
+                          decoration: const InputDecoration(
+                            labelText: 'First Name',
+                            border: OutlineInputBorder(),
+                            contentPadding: EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 12,
+                            ),
+                            isDense: true,
+                          ),
+                          validator: (value) {
+                            if (value?.trim().isEmpty ?? true) {
+                              return 'First name is required';
+                            }
+                            return null;
+                          },
                         ),
-                        validator: (value) {
-                          if (value?.trim().isEmpty ?? true) {
-                            return 'First name is required';
-                          }
-                          return null;
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: TextFormField(
+                          controller: _lastNameController,
+                          decoration: const InputDecoration(
+                            labelText: 'Last Name',
+                            border: OutlineInputBorder(),
+                            contentPadding: EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 12,
+                            ),
+                            isDense: true,
+                          ),
+                          validator: (value) {
+                            if (value?.trim().isEmpty ?? true) {
+                              return 'Last name is required';
+                            }
+                            return null;
+                          },
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+
+                  // Email Address
+                  TextFormField(
+                    controller: _emailController,
+                    decoration: const InputDecoration(
+                      labelText: 'Email Address',
+                      border: OutlineInputBorder(),
+                      contentPadding: EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 12,
+                      ),
+                      isDense: true,
+                    ),
+                    keyboardType: TextInputType.emailAddress,
+                    validator: (value) {
+                      if (value?.trim().isEmpty ?? true) {
+                        return 'Email is required';
+                      }
+                      if (!RegExp(
+                        r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$',
+                      ).hasMatch(value!)) {
+                        return 'Enter a valid email address';
+                      }
+                      return null;
+                    },
+                  ),
+                  const SizedBox(height: 16),
+
+                  // Phone Number
+                  TextFormField(
+                    controller: _phoneController,
+                    decoration: const InputDecoration(
+                      labelText: 'Phone Number (Optional)',
+                      border: OutlineInputBorder(),
+                      contentPadding: EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 12,
+                      ),
+                      isDense: true,
+                    ),
+                    keyboardType: TextInputType.phone,
+                  ),
+                  const SizedBox(height: 16),
+
+                  // Role Dropdown - FIXED VERSION
+                  Container(
+                    width: double.infinity,
+                    child: DropdownButtonFormField<String>(
+                      decoration: const InputDecoration(
+                        labelText: 'Role',
+                        border: OutlineInputBorder(),
+                        contentPadding: EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 12,
+                        ),
+                        isDense: true,
+                      ),
+                      value: _selectedRole,
+                      isExpanded: true, // This prevents overflow
+                      items:
+                          FirebaseAuthService.getAvailableRoles().map((role) {
+                            // Shorten long role names for display
+                            String displayRole = role;
+                            if (role ==
+                                'Financial Planning and Budgeting Officer') {
+                              displayRole = 'Financial Officer';
+                            }
+
+                            return DropdownMenuItem(
+                              value: role,
+                              child: Text(
+                                displayRole,
+                                style: const TextStyle(fontSize: 14),
+                                overflow: TextOverflow.ellipsis,
+                                maxLines: 1,
+                              ),
+                            );
+                          }).toList(),
+                      onChanged: (value) {
+                        setState(() => _selectedRole = value!);
+                      },
+                      validator: (value) {
+                        if (value == null || value.isEmpty) {
+                          return 'Please select a role';
+                        }
+                        return null;
+                      },
+                      // Ensure dropdown has proper styling
+                      style: const TextStyle(
+                        fontSize: 14,
+                        color: Colors.black87,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+
+                  // Password
+                  TextFormField(
+                    controller: _passwordController,
+                    decoration: InputDecoration(
+                      labelText: 'Password',
+                      border: const OutlineInputBorder(),
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 12,
+                      ),
+                      isDense: true,
+                      suffixIcon: IconButton(
+                        icon: Icon(
+                          _obscurePassword
+                              ? Icons.visibility_off
+                              : Icons.visibility,
+                          size: 20,
+                        ),
+                        onPressed: () {
+                          setState(() => _obscurePassword = !_obscurePassword);
                         },
                       ),
                     ),
-                    const SizedBox(width: 16),
-                    Expanded(
-                      child: TextFormField(
-                        controller: _lastNameController,
-                        decoration: const InputDecoration(
-                          labelText: 'Last Name',
-                          border: OutlineInputBorder(),
+                    obscureText: _obscurePassword,
+                    validator: (value) {
+                      if (value?.isEmpty ?? true) {
+                        return 'Password is required';
+                      }
+                      if (value!.length < 6) {
+                        return 'Password must be at least 6 characters';
+                      }
+                      return null;
+                    },
+                  ),
+                  const SizedBox(height: 16),
+
+                  // Confirm Password
+                  TextFormField(
+                    controller: _confirmPasswordController,
+                    decoration: InputDecoration(
+                      labelText: 'Confirm Password',
+                      border: const OutlineInputBorder(),
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 12,
+                      ),
+                      isDense: true,
+                      suffixIcon: IconButton(
+                        icon: Icon(
+                          _obscureConfirmPassword
+                              ? Icons.visibility_off
+                              : Icons.visibility,
+                          size: 20,
                         ),
-                        validator: (value) {
-                          if (value?.trim().isEmpty ?? true) {
-                            return 'Last name is required';
-                          }
-                          return null;
+                        onPressed: () {
+                          setState(
+                            () =>
+                                _obscureConfirmPassword =
+                                    !_obscureConfirmPassword,
+                          );
                         },
                       ),
                     ),
-                  ],
-                ),
-                const SizedBox(height: 16),
-                TextFormField(
-                  controller: _emailController,
-                  decoration: const InputDecoration(
-                    labelText: 'Email Address',
-                    border: OutlineInputBorder(),
+                    obscureText: _obscureConfirmPassword,
+                    validator: (value) {
+                      if (value != _passwordController.text) {
+                        return 'Passwords do not match';
+                      }
+                      return null;
+                    },
                   ),
-                  keyboardType: TextInputType.emailAddress,
-                  validator: (value) {
-                    if (value?.trim().isEmpty ?? true) {
-                      return 'Email is required';
-                    }
-                    if (!RegExp(
-                      r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$',
-                    ).hasMatch(value!)) {
-                      return 'Enter a valid email address';
-                    }
-                    return null;
-                  },
-                ),
-                const SizedBox(height: 16),
-                TextFormField(
-                  controller: _phoneController,
-                  decoration: const InputDecoration(
-                    labelText: 'Phone Number (Optional)',
-                    border: OutlineInputBorder(),
-                  ),
-                  keyboardType: TextInputType.phone,
-                ),
-                const SizedBox(height: 16),
-                DropdownButtonFormField<String>(
-                  decoration: const InputDecoration(
-                    labelText: 'Role',
-                    border: OutlineInputBorder(),
-                  ),
-                  value: _selectedRole,
-                  items:
-                      FirebaseAuthService.getAvailableRoles().map((role) {
-                        return DropdownMenuItem(value: role, child: Text(role));
-                      }).toList(),
-                  onChanged: (value) {
-                    setState(() => _selectedRole = value!);
-                  },
-                ),
-                const SizedBox(height: 16),
-                TextFormField(
-                  controller: _passwordController,
-                  decoration: InputDecoration(
-                    labelText: 'Password',
-                    border: const OutlineInputBorder(),
-                    suffixIcon: IconButton(
-                      icon: Icon(
-                        _obscurePassword
-                            ? Icons.visibility_off
-                            : Icons.visibility,
-                      ),
-                      onPressed: () {
-                        setState(() => _obscurePassword = !_obscurePassword);
-                      },
-                    ),
-                  ),
-                  obscureText: _obscurePassword,
-                  validator: (value) {
-                    if (value?.isEmpty ?? true) {
-                      return 'Password is required';
-                    }
-                    if (value!.length < 6) {
-                      return 'Password must be at least 6 characters';
-                    }
-                    return null;
-                  },
-                ),
-                const SizedBox(height: 16),
-                TextFormField(
-                  controller: _confirmPasswordController,
-                  decoration: InputDecoration(
-                    labelText: 'Confirm Password',
-                    border: const OutlineInputBorder(),
-                    suffixIcon: IconButton(
-                      icon: Icon(
-                        _obscureConfirmPassword
-                            ? Icons.visibility_off
-                            : Icons.visibility,
-                      ),
-                      onPressed: () {
-                        setState(
-                          () =>
-                              _obscureConfirmPassword =
-                                  !_obscureConfirmPassword,
-                        );
-                      },
-                    ),
-                  ),
-                  obscureText: _obscureConfirmPassword,
-                  validator: (value) {
-                    if (value != _passwordController.text) {
-                      return 'Passwords do not match';
-                    }
-                    return null;
-                  },
-                ),
-              ],
+                ],
+              ),
             ),
           ),
         ),
@@ -798,6 +901,7 @@ class _CreateAccountDialogState extends State<_CreateAccountDialog> {
           onPressed: _isLoading ? null : _createAccount,
           style: ElevatedButton.styleFrom(
             backgroundColor: AppTheme.primaryColor,
+            foregroundColor: Colors.white,
           ),
           child:
               _isLoading
@@ -809,10 +913,7 @@ class _CreateAccountDialogState extends State<_CreateAccountDialog> {
                       strokeWidth: 2,
                     ),
                   )
-                  : const Text(
-                    'Create Account',
-                    style: TextStyle(color: Colors.white),
-                  ),
+                  : const Text('Create Account'),
         ),
       ],
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
