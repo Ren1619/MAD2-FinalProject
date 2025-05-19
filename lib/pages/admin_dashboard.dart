@@ -22,13 +22,10 @@ class _AdminDashboardState extends State<AdminDashboard> {
   int _selectedIndex = 0;
   Map<String, dynamic>? _userData;
   bool _isLoading = true;
-  Map<String, int> _dashboardStats = {};
-
   @override
   void initState() {
     super.initState();
     _loadUserData();
-    _loadDashboardStats();
   }
 
   Future<void> _loadUserData() async {
@@ -43,44 +40,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
     });
   }
 
-  Future<void> _loadDashboardStats() async {
-    try {
-      final authService = Provider.of<FirebaseAuthService>(
-        context,
-        listen: false,
-      );
-      final logsService = Provider.of<FirebaseLogsService>(
-        context,
-        listen: false,
-      );
-
-      if (_userData != null) {
-        final companyId = _userData!['company_id'];
-
-        // Get accounts count
-        final accounts = await authService.getAccountsByCompany(companyId);
-
-        // Get recent logs count
-        final recentLogs = await logsService.getLogsForAdmin(limit: 10);
-
-        // Get activity summary
-        final activitySummary = await logsService.getActivitySummary();
-
-        setState(() {
-          _dashboardStats = {
-            'accounts': accounts.length,
-            'recentActivities': recentLogs.length,
-            'totalActivities': activitySummary.values.fold(
-              0,
-              (sum, count) => sum + count,
-            ),
-          };
-        });
-      }
-    } catch (e) {
-      print('Error loading dashboard stats: $e');
-    }
-  }
+  
 
   void _onItemSelected(int index) {
     setState(() {
@@ -129,300 +89,17 @@ class _AdminDashboardState extends State<AdminDashboard> {
   Widget _buildMainContent() {
     switch (_selectedIndex) {
       case 0:
-        return _buildDashboardHome();
+        return const AccountsPage(); // Accounts page as landing page
       case 1:
-        return const AccountsPage();
+        return const BudgetsPage(); // Budgets page
       case 2:
-        return const BudgetsPage();
-      case 3:
-        return const LogsPage();
+        return const LogsPage(); // Logs page
       default:
-        return _buildDashboardHome();
+        return const AccountsPage(); // Default to accounts page
     }
   }
 
-  Widget _buildDashboardHome() {
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(24),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Welcome Section
-          Container(
-            padding: const EdgeInsets.all(24),
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                colors: [AppTheme.primaryColor, AppTheme.primaryDarkColor],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-              ),
-              borderRadius: BorderRadius.circular(16),
-            ),
-            child: Row(
-              children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Welcome back, ${_userData?['f_name'] ?? 'Administrator'}!',
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 24,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        'Manage your company\'s budget and financial operations',
-                        style: TextStyle(
-                          color: AppTheme.primaryLightColor,
-                          fontSize: 16,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                Container(
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(0.2),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Icon(
-                    Icons.admin_panel_settings,
-                    color: Colors.white,
-                    size: 48,
-                  ),
-                ),
-              ],
-            ),
-          ),
-
-          const SizedBox(height: 32),
-
-          // Stats Cards
-          Text(
-            'Overview',
-            style: TextStyle(
-              fontSize: 20,
-              fontWeight: FontWeight.bold,
-              color: AppTheme.textPrimary,
-            ),
-          ),
-          const SizedBox(height: 16),
-
-          GridView.count(
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            crossAxisCount: 3,
-            mainAxisSpacing: 16,
-            crossAxisSpacing: 16,
-            childAspectRatio: 1.5,
-            children: [
-              _buildStatCard(
-                'Total Accounts',
-                '${_dashboardStats['accounts'] ?? 0}',
-                Icons.people,
-                Colors.blue,
-                onTap: () => _onItemSelected(1), // Navigate to accounts
-              ),
-              _buildStatCard(
-                'Recent Activities',
-                '${_dashboardStats['recentActivities'] ?? 0}',
-                Icons.history,
-                Colors.green,
-                onTap: () => _onItemSelected(3), // Navigate to logs
-              ),
-              _buildStatCard(
-                'Total Activities',
-                '${_dashboardStats['totalActivities'] ?? 0}',
-                Icons.bar_chart,
-                Colors.orange,
-                onTap: () => _onItemSelected(3), // Navigate to logs
-              ),
-            ],
-          ),
-
-          const SizedBox(height: 32),
-
-          // Quick Actions
-          Text(
-            'Quick Actions',
-            style: TextStyle(
-              fontSize: 20,
-              fontWeight: FontWeight.bold,
-              color: AppTheme.textPrimary,
-            ),
-          ),
-          const SizedBox(height: 16),
-
-          Row(
-            children: [
-              Expanded(
-                child: _buildQuickActionCard(
-                  'Manage Accounts',
-                  'Create, edit, and manage user accounts',
-                  Icons.group_add,
-                  () => _onItemSelected(1),
-                ),
-              ),
-              const SizedBox(width: 16),
-              Expanded(
-                child: _buildQuickActionCard(
-                  'View Budgets',
-                  'Monitor budget status and expenses',
-                  Icons.account_balance_wallet,
-                  () => _onItemSelected(2),
-                ),
-              ),
-            ],
-          ),
-
-          const SizedBox(height: 16),
-
-          Row(
-            children: [
-              Expanded(
-                child: _buildQuickActionCard(
-                  'Activity Logs',
-                  'Review system activities and audit trail',
-                  Icons.history,
-                  () => _onItemSelected(3),
-                ),
-              ),
-              const SizedBox(width: 16),
-              Expanded(
-                child: _buildQuickActionCard(
-                  'Profile Settings',
-                  'Update your profile information',
-                  Icons.settings,
-                  () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) => const ProfilePage(),
-                      ),
-                    );
-                  },
-                ),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildStatCard(
-    String title,
-    String value,
-    IconData icon,
-    Color color, {
-    VoidCallback? onTap,
-  }) {
-    return HoverCard(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.all(20),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: color.withOpacity(0.2)),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    color: color.withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Icon(icon, color: color, size: 20),
-                ),
-                if (onTap != null)
-                  Icon(
-                    Icons.arrow_forward_ios,
-                    size: 14,
-                    color: Colors.grey[400],
-                  ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            Text(
-              value,
-              style: TextStyle(
-                fontSize: 24,
-                fontWeight: FontWeight.bold,
-                color: AppTheme.textPrimary,
-              ),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              title,
-              style: TextStyle(fontSize: 14, color: AppTheme.textSecondary),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildQuickActionCard(
-    String title,
-    String description,
-    IconData icon,
-    VoidCallback onTap,
-  ) {
-    return HoverCard(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.all(20),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: AppTheme.primaryColor.withOpacity(0.2)),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: AppTheme.primaryLightColor,
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  child: Icon(icon, color: AppTheme.primaryColor, size: 24),
-                ),
-                const Spacer(),
-                Icon(Icons.arrow_forward, color: AppTheme.primaryColor),
-              ],
-            ),
-            const SizedBox(height: 16),
-            Text(
-              title,
-              style: TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.bold,
-                color: AppTheme.textPrimary,
-              ),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              description,
-              style: TextStyle(fontSize: 14, color: AppTheme.textSecondary),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
+  
 
   @override
   Widget build(BuildContext context) {

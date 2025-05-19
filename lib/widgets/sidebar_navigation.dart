@@ -73,14 +73,14 @@ class SidebarNavigation extends StatelessWidget {
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      'v1.0.0',
+                      'Account Management', // Updated subtitle
                       style: TextStyle(color: Colors.blue[100], fontSize: 12),
                     ),
                   ],
                 ),
               ],
             ),
-            const SizedBox(height: 16),
+            const SizedBox(width: 16),
             // User profile info
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
@@ -126,8 +126,11 @@ class SidebarNavigation extends StatelessWidget {
   }
 
   // Optimized menu items list using ListView.builder
+  // In lib/widgets/sidebar_navigation.dart
+  // Replace the _buildMenuItems method with this updated version:
+
   Widget _buildMenuItems(BuildContext context) {
-    // Define menu data
+    // Updated menu data to match your navigation structure
     final List<Map<String, dynamic>> menuSections = [
       {
         'title': 'Main',
@@ -144,12 +147,7 @@ class SidebarNavigation extends StatelessWidget {
         'title': 'Monitoring',
         'items': [
           {'icon': Icons.history, 'title': 'Logs', 'index': 2},
-          {
-            'icon': Icons.bar_chart,
-            'title': 'Analytics',
-            'index': 3,
-            'badge': '2',
-          },
+          // Removed Analytics since it's not implemented
         ],
       },
       {
@@ -173,16 +171,13 @@ class SidebarNavigation extends StatelessWidget {
 
     return ListView.builder(
       padding: EdgeInsets.zero,
-      itemCount:
-          menuSections.length * 2 - 1, // Account for sections and their items
+      itemCount: menuSections.length * 2 - 1,
       itemBuilder: (context, index) {
-        // For even indices, build a section header
         if (index % 2 == 0) {
           final sectionIndex = index ~/ 2;
           return _buildMenuSection(menuSections[sectionIndex]['title']);
         }
 
-        // For odd indices, build the section items
         final sectionIndex = index ~/ 2;
         final items = menuSections[sectionIndex]['items'] as List;
 
