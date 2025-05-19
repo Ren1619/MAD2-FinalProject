@@ -153,7 +153,129 @@ class FirebaseAuthService {
     }
   }
 
-  // UPDATED: Create user account without auto-login (Option 2)
+  // Modified: Create user account with auto re-authentication
+  Future<bool> createUserAccountWithAutoReauth({
+    required String firstName,
+    required String lastName,
+    required String email,
+    required String password,
+    required String role,
+    String? phone,
+    required String companyId,
+    required String adminEmail,
+    required String adminPassword, // Admin password for auto re-auth
+  }) async {
+    try {
+      // Get current admin user data before creating new account
+      final currentUserData = await currentUser;
+      if (currentUserData == null || currentUserData['role'] != ROLE_ADMIN) {
+        throw 'Only administrators can create accounts';
+      }
+
+      final adminUserId = currentUserData['account_id'];
+
+      print('Admin creating account for: $email'); // Debug log
+
+      // Validate role (admin cannot create another admin)
+      if (role == ROLE_ADMIN) {
+        throw 'Cannot create another administrator account';
+      }
+
+      print('Creating Firebase user for: $email'); // Debug log
+
+      // Create Firebase user (this will sign out the current admin)
+      final UserCredential result = await _auth.createUserWithEmailAndPassword(
+        email: email,
+        password: password,
+      );
+
+      if (result.user != null) {
+        final newUserUid = result.user!.uid;
+        print('Firebase user created with UID: $newUserUid'); // Debug log
+
+        // Create account document in Firestore for the new user
+        await _firestore.collection('accounts').doc(newUserUid).set({
+          'account_id': newUserUid,
+          'company_id': companyId,
+          'f_name': firstName,
+          'l_name': lastName,
+          'email': email,
+          'contact_number': phone ?? '',
+          'role': role,
+          'status': 'Active',
+          'created_at': FieldValue.serverTimestamp(),
+        });
+
+        print('Account document created in Firestore'); // Debug log
+
+        // Sign out the newly created user
+        await _auth.signOut();
+        print('New user signed out'); // Debug log
+
+        // Automatically re-authenticate the admin
+        print('Re-authenticating admin: $adminEmail'); // Debug log
+        final adminReauth = await _auth.signInWithEmailAndPassword(
+          email: adminEmail,
+          password: adminPassword,
+        );
+
+        if (adminReauth.user != null) {
+          print('Admin re-authenticated successfully'); // Debug log
+        } else {
+          print('Failed to re-authenticate admin'); // Debug log
+          throw 'Failed to re-authenticate admin after account creation';
+        }
+
+        // Log activity directly to Firestore
+        try {
+          await _firestore.collection('logs').add({
+            'log_id': UuidGenerator.generateUuid(),
+            'log_desc':
+                'New account created: $email with role: $role by admin: $adminEmail',
+            'type': 'Account Management',
+            'company_id': companyId,
+            'user_id': adminUserId,
+            'created_at': FieldValue.serverTimestamp(),
+          });
+          print('Activity logged successfully'); // Debug log
+        } catch (logError) {
+          print('Warning: Could not log activity: $logError');
+        }
+
+        return true;
+      }
+
+      throw 'Failed to create Firebase user account';
+    } catch (e) {
+      print('Error in createUserAccountWithAutoReauth: $e');
+
+      // Try to clean up if a user was created
+      try {
+        final currentAuthUser = _auth.currentUser;
+        if (currentAuthUser != null && currentAuthUser.email == email) {
+          print('Cleaning up failed user account'); // Debug log
+          await currentAuthUser.delete();
+        }
+      } catch (deleteError) {
+        print('Warning: Could not delete failed user account: $deleteError');
+      }
+
+      // Try to re-authenticate admin even if account creation failed
+      try {
+        await _auth.signInWithEmailAndPassword(
+          email: adminEmail,
+          password: adminPassword,
+        );
+        print('Admin re-authenticated after error'); // Debug log
+      } catch (reAuthError) {
+        print('Failed to re-authenticate admin after error: $reAuthError');
+      }
+
+      rethrow; // Re-throw the original error
+    }
+  }
+
+  // Keep the original method for backward compatibility
   Future<bool> createUserAccount({
     required String firstName,
     required String lastName,
