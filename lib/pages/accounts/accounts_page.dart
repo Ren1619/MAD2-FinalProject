@@ -640,8 +640,9 @@ class _AccountsPageState extends State<AccountsPage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Header with avatar and badges
+            // Header with avatar and badges - Improved layout
             Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 CircleAvatar(
                   radius: 28,
@@ -662,12 +663,13 @@ class _AccountsPageState extends State<AccountsPage> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        '${account['f_name']} ${account['l_name']}',
+                        '${account['f_name'] ?? ''} ${account['l_name'] ?? ''}',
                         style: const TextStyle(
                           fontSize: 18,
                           fontWeight: FontWeight.bold,
                         ),
                         overflow: TextOverflow.ellipsis,
+                        maxLines: 1,
                       ),
                       const SizedBox(height: 4),
                       Text(
@@ -677,6 +679,7 @@ class _AccountsPageState extends State<AccountsPage> {
                           color: AppTheme.textSecondary,
                         ),
                         overflow: TextOverflow.ellipsis,
+                        maxLines: 1,
                       ),
                     ],
                   ),
@@ -686,15 +689,17 @@ class _AccountsPageState extends State<AccountsPage> {
 
             const SizedBox(height: 16),
 
-            // Status and Role badges
-            Row(
+            // Status and Role badges - Improved with flexible layout
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
               children: [
                 StatusBadge(status: account['status'] ?? 'Unknown'),
-                const SizedBox(width: 8),
-                Expanded(child: RoleBadge(role: account['role'] ?? 'Unknown')),
+                RoleBadge(role: account['role'] ?? 'Unknown'),
               ],
             ),
 
+            // Contact info with proper overflow handling
             if (account['contact_number']?.isNotEmpty ?? false) ...[
               const SizedBox(height: 12),
               Row(
@@ -703,9 +708,10 @@ class _AccountsPageState extends State<AccountsPage> {
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(
-                      account['contact_number'],
+                      account['contact_number'] ?? '',
                       style: TextStyle(color: AppTheme.textSecondary),
                       overflow: TextOverflow.ellipsis,
+                      maxLines: 1,
                     ),
                   ),
                 ],
@@ -714,10 +720,14 @@ class _AccountsPageState extends State<AccountsPage> {
 
             const Spacer(),
 
-            // Action buttons - more compact for desktop
-            Row(
+            // Action buttons - Wrapped for better responsiveness
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              alignment: WrapAlignment.spaceBetween,
               children: [
-                Expanded(
+                SizedBox(
+                  width: 70,
                   child: OutlinedButton(
                     onPressed: () => _viewAccountDetails(account),
                     style: OutlinedButton.styleFrom(
@@ -726,22 +736,27 @@ class _AccountsPageState extends State<AccountsPage> {
                     child: const Text(
                       'Details',
                       style: TextStyle(fontSize: 12),
+                      overflow: TextOverflow.ellipsis,
                     ),
                   ),
                 ),
-                const SizedBox(width: 8),
-                Expanded(
+                SizedBox(
+                  width: 60,
                   child: OutlinedButton(
                     onPressed:
                         isAdmin ? null : () => _showEditAccountDialog(account),
                     style: OutlinedButton.styleFrom(
                       padding: const EdgeInsets.symmetric(vertical: 8),
                     ),
-                    child: const Text('Edit', style: TextStyle(fontSize: 12)),
+                    child: const Text(
+                      'Edit',
+                      style: TextStyle(fontSize: 12),
+                      overflow: TextOverflow.ellipsis,
+                    ),
                   ),
                 ),
-                const SizedBox(width: 8),
-                Expanded(
+                SizedBox(
+                  width: 80,
                   child: OutlinedButton(
                     onPressed:
                         isAdmin ? null : () => _toggleAccountStatus(account),
@@ -752,15 +767,17 @@ class _AccountsPageState extends State<AccountsPage> {
                     child: Text(
                       isActive ? 'Disable' : 'Enable',
                       style: const TextStyle(fontSize: 12),
+                      overflow: TextOverflow.ellipsis,
                     ),
                   ),
                 ),
-                const SizedBox(width: 8),
                 IconButton(
                   onPressed: isAdmin ? null : () => _deleteAccount(account),
                   icon: const Icon(Icons.delete, size: 18),
                   color: Colors.red,
                   tooltip: 'Delete Account',
+                  padding: const EdgeInsets.all(8),
+                  constraints: const BoxConstraints(),
                 ),
               ],
             ),
@@ -792,7 +809,9 @@ class _AccountsPageState extends State<AccountsPage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            // Improved header layout
             Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 // Avatar
                 CircleAvatar(
@@ -807,18 +826,22 @@ class _AccountsPageState extends State<AccountsPage> {
                     ),
                   ),
                 ),
-                const SizedBox(width: 16),
+                const SizedBox(width: 12),
+
                 // Name and Email
                 Expanded(
+                  flex: 3,
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        '${account['f_name']} ${account['l_name']}',
+                        '${account['f_name'] ?? ''} ${account['l_name'] ?? ''}',
                         style: const TextStyle(
                           fontSize: 16,
                           fontWeight: FontWeight.bold,
                         ),
+                        overflow: TextOverflow.ellipsis,
+                        maxLines: 1,
                       ),
                       const SizedBox(height: 4),
                       Text(
@@ -827,31 +850,50 @@ class _AccountsPageState extends State<AccountsPage> {
                           fontSize: 14,
                           color: AppTheme.textSecondary,
                         ),
+                        overflow: TextOverflow.ellipsis,
+                        maxLines: 1,
                       ),
                     ],
                   ),
                 ),
-                // Status and Role
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [
-                    StatusBadge(status: account['status'] ?? 'Unknown'),
-                    const SizedBox(height: 4),
-                    RoleBadge(role: account['role'] ?? 'Unknown'),
-                  ],
+
+                // Status and Role - Better spacing
+                Expanded(
+                  flex: 2,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      Container(
+                        constraints: const BoxConstraints(maxWidth: 120),
+                        child: StatusBadge(
+                          status: account['status'] ?? 'Unknown',
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Container(
+                        constraints: const BoxConstraints(maxWidth: 120),
+                        child: RoleBadge(role: account['role'] ?? 'Unknown'),
+                      ),
+                    ],
+                  ),
                 ),
               ],
             ),
 
+            // Contact info with proper overflow
             if (account['contact_number']?.isNotEmpty ?? false) ...[
               const SizedBox(height: 12),
               Row(
                 children: [
                   Icon(Icons.phone, size: 16, color: AppTheme.textSecondary),
                   const SizedBox(width: 8),
-                  Text(
-                    account['contact_number'],
-                    style: TextStyle(color: AppTheme.textSecondary),
+                  Expanded(
+                    child: Text(
+                      account['contact_number'] ?? '',
+                      style: TextStyle(color: AppTheme.textSecondary),
+                      overflow: TextOverflow.ellipsis,
+                      maxLines: 1,
+                    ),
                   ),
                 ],
               ),
@@ -859,34 +901,37 @@ class _AccountsPageState extends State<AccountsPage> {
 
             const SizedBox(height: 16),
 
-            // Action Buttons
-            Row(
-              children: [
-                Expanded(
-                  child: OutlinedButton.icon(
+            // Action Buttons - Using SingleChildScrollView for horizontal scrolling if needed
+            SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                children: [
+                  OutlinedButton.icon(
                     onPressed: () => _viewAccountDetails(account),
                     icon: const Icon(Icons.visibility, size: 16),
                     label: const Text('View Details'),
                     style: OutlinedButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(vertical: 8),
+                      padding: const EdgeInsets.symmetric(
+                        vertical: 8,
+                        horizontal: 12,
+                      ),
                     ),
                   ),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: OutlinedButton.icon(
+                  const SizedBox(width: 8),
+                  OutlinedButton.icon(
                     onPressed:
                         isAdmin ? null : () => _showEditAccountDialog(account),
                     icon: const Icon(Icons.edit, size: 16),
                     label: const Text('Edit'),
                     style: OutlinedButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(vertical: 8),
+                      padding: const EdgeInsets.symmetric(
+                        vertical: 8,
+                        horizontal: 12,
+                      ),
                     ),
                   ),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: OutlinedButton.icon(
+                  const SizedBox(width: 8),
+                  OutlinedButton.icon(
                     onPressed:
                         isAdmin ? null : () => _toggleAccountStatus(account),
                     icon: Icon(
@@ -896,18 +941,23 @@ class _AccountsPageState extends State<AccountsPage> {
                     label: Text(isActive ? 'Disable' : 'Enable'),
                     style: OutlinedButton.styleFrom(
                       foregroundColor: isActive ? Colors.orange : Colors.green,
-                      padding: const EdgeInsets.symmetric(vertical: 8),
+                      padding: const EdgeInsets.symmetric(
+                        vertical: 8,
+                        horizontal: 12,
+                      ),
                     ),
                   ),
-                ),
-                const SizedBox(width: 8),
-                IconButton(
-                  onPressed: isAdmin ? null : () => _deleteAccount(account),
-                  icon: const Icon(Icons.delete),
-                  color: Colors.red,
-                  tooltip: 'Delete Account',
-                ),
-              ],
+                  const SizedBox(width: 8),
+                  IconButton(
+                    onPressed: isAdmin ? null : () => _deleteAccount(account),
+                    icon: const Icon(Icons.delete, size: 20),
+                    color: Colors.red,
+                    tooltip: 'Delete Account',
+                    padding: const EdgeInsets.all(8),
+                    constraints: const BoxConstraints(),
+                  ),
+                ],
+              ),
             ),
           ],
         ),
