@@ -1,7 +1,9 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../services/firebase_auth_service.dart';
 import '../../services/firebase_logs_service.dart';
+import '../../services/app_logger.dart';
 import '../../widgets/common_widgets.dart';
 import '../../theme.dart';
 
@@ -18,21 +20,13 @@ class _LogsPageState extends State<LogsPage> {
   List<Map<String, dynamic>> _logs = [];
   List<Map<String, dynamic>> _filteredLogs = [];
   Map<String, dynamic>? _userData;
-  Map<String, int> _activitySummary = {};
+  Map<String, dynamic> _activitySummary = {};
   bool _isLoading = true;
   bool _isLoadingMore = false;
   String _searchQuery = '';
-  String _typeFilter = 'All';
+  String _categoryFilter = 'All';
+  String _levelFilter = 'All';
   DateTimeRange? _dateRange;
-
-  final List<String> _logTypes = [
-    'All',
-    'Authentication',
-    'Account Management',
-    'Budget Management',
-    'Expense Management',
-    'System',
-  ];
 
   @override
   void initState() {
@@ -66,20 +60,47 @@ class _LogsPageState extends State<LogsPage> {
         listen: false,
       );
 
+      // Debug: Check user data first
+      print('DEBUG: Current user data: $_userData');
+      print('DEBUG: User role: ${_userData?['role']}');
+      print('DEBUG: User company_id: ${_userData?['company_id']}');
+
+      // Debug: Try a simple query first to see if there are any logs at all
+      final allLogsSnapshot =
+          await FirebaseFirestore.instance.collection('logs').get();
+      print('DEBUG: Total logs in database: ${allLogsSnapshot.docs.length}');
+
+      if (allLogsSnapshot.docs.isNotEmpty) {
+        final firstLog = allLogsSnapshot.docs.first.data();
+        print('DEBUG: First log structure: $firstLog');
+        print('DEBUG: First log company_id: ${firstLog['company_id']}');
+      }
+
       List<Map<String, dynamic>> logs;
 
       if (_dateRange != null) {
         logs = await logsService.getLogsByDateRange(
           startDate: _dateRange!.start,
           endDate: _dateRange!.end,
-          filterType: _typeFilter == 'All' ? null : _typeFilter,
+          filterCategory:
+              _categoryFilter == 'All'
+                  ? null
+                  : _getCategoryFromString(_categoryFilter),
+          filterLevel:
+              _levelFilter == 'All' ? null : _getLevelFromString(_levelFilter),
           limit: 100,
         );
       } else {
         logs = await logsService.getLogsForAdmin(
-          filterType: _typeFilter == 'All' ? null : _typeFilter,
+          filterCategory: _categoryFilter == 'All' ? null : _categoryFilter,
+          filterLevel: _levelFilter == 'All' ? null : _levelFilter,
           limit: 100,
         );
+      }
+
+      print('DEBUG: Logs returned: ${logs.length}');
+      if (logs.isNotEmpty) {
+        print('DEBUG: First returned log: ${logs.first}');
       }
 
       setState(() {
@@ -89,6 +110,7 @@ class _LogsPageState extends State<LogsPage> {
 
       _applyFilters();
     } catch (e) {
+      print('DEBUG: Error loading logs: $e');
       _showErrorSnackBar('Error loading logs: $e');
     } finally {
       setState(() => _isLoading = false);
@@ -112,6 +134,22 @@ class _LogsPageState extends State<LogsPage> {
     }
   }
 
+  LogCategory? _getCategoryFromString(String categoryName) {
+    try {
+      return LogCategory.values.firstWhere((e) => e.name == categoryName);
+    } catch (e) {
+      return null;
+    }
+  }
+
+  LogLevel? _getLevelFromString(String levelName) {
+    try {
+      return LogLevel.values.firstWhere((e) => e.name == levelName);
+    } catch (e) {
+      return null;
+    }
+  }
+
   void _applyFilters() {
     setState(() {
       _filteredLogs =
@@ -119,15 +157,17 @@ class _LogsPageState extends State<LogsPage> {
             // Search filter
             if (_searchQuery.isNotEmpty) {
               final searchLower = _searchQuery.toLowerCase();
-              final description = (log['log_desc'] ?? '').toLowerCase();
+              final message = (log['message'] ?? '').toLowerCase();
               final userName = (log['user_name'] ?? '').toLowerCase();
               final userEmail = (log['user_email'] ?? '').toLowerCase();
-              final type = (log['type'] ?? '').toLowerCase();
+              final category = (log['category'] ?? '').toLowerCase();
+              final level = (log['level'] ?? '').toLowerCase();
 
-              if (!description.contains(searchLower) &&
+              if (!message.contains(searchLower) &&
                   !userName.contains(searchLower) &&
                   !userEmail.contains(searchLower) &&
-                  !type.contains(searchLower)) {
+                  !category.contains(searchLower) &&
+                  !level.contains(searchLower)) {
                 return false;
               }
             }
@@ -168,7 +208,12 @@ class _LogsPageState extends State<LogsPage> {
         listen: false,
       );
       final exportData = await logsService.getLogsForExport(
-        filterType: _typeFilter == 'All' ? null : _typeFilter,
+        filterCategory:
+            _categoryFilter == 'All'
+                ? null
+                : _getCategoryFromString(_categoryFilter),
+        filterLevel:
+            _levelFilter == 'All' ? null : _getLevelFromString(_levelFilter),
         startDate: _dateRange?.start,
         endDate: _dateRange?.end,
       );
@@ -238,38 +283,115 @@ class _LogsPageState extends State<LogsPage> {
     return '${start.day}/${start.month}/${start.year} - ${end.day}/${end.month}/${end.year}';
   }
 
-  Color _getTypeColor(String type) {
-    switch (type) {
-      case 'Authentication':
+  Color _getCategoryColor(String category) {
+    switch (category) {
+      case 'authentication':
         return Colors.blue;
-      case 'Account Management':
+      case 'accountManagement':
         return Colors.green;
-      case 'Budget Management':
+      case 'budgetManagement':
         return Colors.purple;
-      case 'Expense Management':
+      case 'expenseManagement':
         return Colors.orange;
-      case 'System':
+      case 'system':
+      case 'performance':
         return Colors.grey;
+      case 'security':
+        return Colors.red;
+      case 'userAction':
+        return Colors.indigo;
+      case 'error':
+        return Colors.redAccent;
       default:
         return AppTheme.primaryColor;
     }
   }
 
-  IconData _getTypeIcon(String type) {
-    switch (type) {
-      case 'Authentication':
+  IconData _getCategoryIcon(String category) {
+    switch (category) {
+      case 'authentication':
         return Icons.login;
-      case 'Account Management':
+      case 'accountManagement':
         return Icons.people;
-      case 'Budget Management':
+      case 'budgetManagement':
         return Icons.account_balance_wallet;
-      case 'Expense Management':
+      case 'expenseManagement':
         return Icons.receipt;
-      case 'System':
+      case 'system':
+      case 'performance':
         return Icons.settings;
+      case 'security':
+        return Icons.security;
+      case 'userAction':
+        return Icons.touch_app;
+      case 'error':
+        return Icons.error;
       default:
         return Icons.info;
     }
+  }
+
+  Color _getLevelColor(String level) {
+    switch (level) {
+      case 'debug':
+        return Colors.grey;
+      case 'info':
+        return Colors.blue;
+      case 'warning':
+        return Colors.orange;
+      case 'error':
+        return Colors.red;
+      case 'critical':
+        return Colors.red[900]!;
+      default:
+        return AppTheme.primaryColor;
+    }
+  }
+
+  IconData _getLevelIcon(String level) {
+    switch (level) {
+      case 'debug':
+        return Icons.bug_report;
+      case 'info':
+        return Icons.info;
+      case 'warning':
+        return Icons.warning;
+      case 'error':
+        return Icons.error;
+      case 'critical':
+        return Icons.dangerous;
+      default:
+        return Icons.circle;
+    }
+  }
+
+  String _formatCategoryName(String category) {
+    switch (category) {
+      case 'authentication':
+        return 'Authentication';
+      case 'accountManagement':
+        return 'Account Management';
+      case 'budgetManagement':
+        return 'Budget Management';
+      case 'expenseManagement':
+        return 'Expense Management';
+      case 'system':
+        return 'System';
+      case 'userAction':
+        return 'User Action';
+      case 'error':
+        return 'Error';
+      case 'performance':
+        return 'Performance';
+      case 'security':
+        return 'Security';
+      default:
+        return category;
+    }
+  }
+
+  String _formatLevelName(String level) {
+    return level[0].toUpperCase() + level.substring(1);
   }
 
   @override
@@ -361,54 +483,133 @@ class _LogsPageState extends State<LogsPage> {
                 const SizedBox(height: 16),
 
                 // Stats Cards
-                Row(
-                  children: [
-                    Expanded(
-                      child: _buildStatCard(
-                        'Authentication',
-                        _activitySummary['Authentication'] ?? 0,
-                        Icons.login,
-                        Colors.blue,
+                if (_activitySummary['by_category'] != null) ...[
+                  Row(
+                    children: [
+                      Expanded(
+                        child: _buildStatCard(
+                          'Authentication',
+                          (_activitySummary['by_category']
+                                  as Map<String, dynamic>)['authentication'] ??
+                              0,
+                          Icons.login,
+                          Colors.blue,
+                        ),
                       ),
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: _buildStatCard(
-                        'Account Mgmt',
-                        _activitySummary['Account Management'] ?? 0,
-                        Icons.people,
-                        Colors.green,
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: _buildStatCard(
+                          'Account Mgmt',
+                          (_activitySummary['by_category']
+                                  as Map<
+                                    String,
+                                    dynamic
+                                  >)['accountManagement'] ??
+                              0,
+                          Icons.people,
+                          Colors.green,
+                        ),
                       ),
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: _buildStatCard(
-                        'Budget Mgmt',
-                        _activitySummary['Budget Management'] ?? 0,
-                        Icons.account_balance_wallet,
-                        Colors.purple,
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: _buildStatCard(
+                          'Budget Mgmt',
+                          (_activitySummary['by_category']
+                                  as Map<
+                                    String,
+                                    dynamic
+                                  >)['budgetManagement'] ??
+                              0,
+                          Icons.account_balance_wallet,
+                          Colors.purple,
+                        ),
                       ),
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: _buildStatCard(
-                        'Expense Mgmt',
-                        _activitySummary['Expense Management'] ?? 0,
-                        Icons.receipt,
-                        Colors.orange,
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: _buildStatCard(
+                          'Expense Mgmt',
+                          (_activitySummary['by_category']
+                                  as Map<
+                                    String,
+                                    dynamic
+                                  >)['expenseManagement'] ??
+                              0,
+                          Icons.receipt,
+                          Colors.orange,
+                        ),
                       ),
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: _buildStatCard(
-                        'System',
-                        _activitySummary['System'] ?? 0,
-                        Icons.settings,
-                        Colors.grey,
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: _buildStatCard(
+                          'System',
+                          (_activitySummary['by_category']
+                                  as Map<String, dynamic>)['system'] ??
+                              0,
+                          Icons.settings,
+                          Colors.grey,
+                        ),
                       ),
-                    ),
-                  ],
-                ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  // Level Stats
+                  Row(
+                    children: [
+                      Expanded(
+                        child: _buildStatCard(
+                          'Info',
+                          (_activitySummary['by_level']
+                                  as Map<String, dynamic>)['info'] ??
+                              0,
+                          Icons.info,
+                          Colors.blue,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: _buildStatCard(
+                          'Warning',
+                          (_activitySummary['by_level']
+                                  as Map<String, dynamic>)['warning'] ??
+                              0,
+                          Icons.warning,
+                          Colors.orange,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: _buildStatCard(
+                          'Error',
+                          (_activitySummary['by_level']
+                                  as Map<String, dynamic>)['error'] ??
+                              0,
+                          Icons.error,
+                          Colors.red,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: _buildStatCard(
+                          'Critical',
+                          (_activitySummary['by_level']
+                                  as Map<String, dynamic>)['critical'] ??
+                              0,
+                          Icons.dangerous,
+                          Colors.red[900]!,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: _buildStatCard(
+                          'Total',
+                          _activitySummary['total_logs'] ?? 0,
+                          Icons.list,
+                          AppTheme.primaryColor,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
               ],
             ),
           ),
@@ -428,7 +629,7 @@ class _LogsPageState extends State<LogsPage> {
                       flex: 2,
                       child: CustomSearchField(
                         hintText:
-                            'Search logs by description, user, or type...',
+                            'Search logs by message, user, category, or level...',
                         onChanged: (value) {
                           setState(() => _searchQuery = value);
                           _applyFilters();
@@ -437,27 +638,64 @@ class _LogsPageState extends State<LogsPage> {
                     ),
                     const SizedBox(width: 12),
 
-                    // Type Filter
+                    // Category Filter
                     Expanded(
                       child: DropdownButtonFormField<String>(
                         decoration: const InputDecoration(
-                          labelText: 'Type',
+                          labelText: 'Category',
                           border: OutlineInputBorder(),
                           contentPadding: EdgeInsets.symmetric(
                             horizontal: 12,
                             vertical: 8,
                           ),
                         ),
-                        value: _typeFilter,
+                        value: _categoryFilter,
                         items:
-                            _logTypes.map((type) {
+                            FirebaseLogsService.getLogCategories().map((
+                              category,
+                            ) {
                               return DropdownMenuItem(
-                                value: type,
-                                child: Text(type),
+                                value: category,
+                                child: Text(
+                                  category == 'All'
+                                      ? category
+                                      : _formatCategoryName(category),
+                                ),
                               );
                             }).toList(),
                         onChanged: (value) {
-                          setState(() => _typeFilter = value!);
+                          setState(() => _categoryFilter = value!);
+                          _loadLogs();
+                        },
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+
+                    // Level Filter
+                    Expanded(
+                      child: DropdownButtonFormField<String>(
+                        decoration: const InputDecoration(
+                          labelText: 'Level',
+                          border: OutlineInputBorder(),
+                          contentPadding: EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 8,
+                          ),
+                        ),
+                        value: _levelFilter,
+                        items:
+                            FirebaseLogsService.getLogLevels().map((level) {
+                              return DropdownMenuItem(
+                                value: level,
+                                child: Text(
+                                  level == 'All'
+                                      ? level
+                                      : _formatLevelName(level),
+                                ),
+                              );
+                            }).toList(),
+                        onChanged: (value) {
+                          setState(() => _levelFilter = value!);
                           _loadLogs();
                         },
                       ),
@@ -510,7 +748,7 @@ class _LogsPageState extends State<LogsPage> {
                 const Spacer(),
                 if (_filteredLogs.isNotEmpty)
                   Text(
-                    'Latest: ${_formatTimestamp(_filteredLogs.isNotEmpty ? _filteredLogs.first['created_at'] : null)}',
+                    'Latest: ${_formatTimestamp(_filteredLogs.isNotEmpty ? _filteredLogs.first['timestamp'] : null)}',
                     style: TextStyle(
                       fontSize: 12,
                       color: AppTheme.textSecondary,
@@ -527,7 +765,8 @@ class _LogsPageState extends State<LogsPage> {
                     ? EmptyStateWidget(
                       message:
                           _searchQuery.isNotEmpty ||
-                                  _typeFilter != 'All' ||
+                                  _categoryFilter != 'All' ||
+                                  _levelFilter != 'All' ||
                                   _dateRange != null
                               ? 'No logs match your search criteria.\nTry adjusting your filters.'
                               : 'No activity logs found.\nLogs will appear here as users perform actions.',
@@ -580,9 +819,12 @@ class _LogsPageState extends State<LogsPage> {
   }
 
   Widget _buildLogCard(Map<String, dynamic> log) {
-    final type = log['type'] ?? 'Unknown';
-    final color = _getTypeColor(type);
-    final icon = _getTypeIcon(type);
+    final category = log['category'] ?? 'unknown';
+    final level = log['level'] ?? 'info';
+    final categoryColor = _getCategoryColor(category);
+    final levelColor = _getLevelColor(level);
+    final categoryIcon = _getCategoryIcon(category);
+    final levelIcon = _getLevelIcon(level);
     final isSystemLog = log['user_name'] == 'System';
 
     return HoverCard(
@@ -593,31 +835,41 @@ class _LogsPageState extends State<LogsPage> {
         decoration: BoxDecoration(
           color: Colors.white,
           borderRadius: BorderRadius.circular(10),
-          border: Border.all(color: color.withOpacity(0.2)),
+          border: Border.all(color: levelColor.withOpacity(0.2)),
+          boxShadow:
+              level == 'error' || level == 'critical'
+                  ? [
+                    BoxShadow(
+                      color: levelColor.withOpacity(0.1),
+                      blurRadius: 4,
+                      offset: const Offset(0, 2),
+                    ),
+                  ]
+                  : null,
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Row(
               children: [
-                // Type Icon
+                // Category Icon
                 Container(
                   padding: const EdgeInsets.all(8),
                   decoration: BoxDecoration(
-                    color: color.withOpacity(0.1),
+                    color: categoryColor.withOpacity(0.1),
                     borderRadius: BorderRadius.circular(8),
                   ),
-                  child: Icon(icon, color: color, size: 16),
+                  child: Icon(categoryIcon, color: categoryColor, size: 16),
                 ),
                 const SizedBox(width: 12),
 
-                // Log Description
+                // Log Message
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        log['log_desc'] ?? 'No description',
+                        log['message'] ?? 'No message',
                         style: const TextStyle(
                           fontSize: 14,
                           fontWeight: FontWeight.w500,
@@ -628,20 +880,48 @@ class _LogsPageState extends State<LogsPage> {
                       const SizedBox(height: 4),
                       Row(
                         children: [
+                          // Level Badge
                           Container(
                             padding: const EdgeInsets.symmetric(
                               horizontal: 6,
                               vertical: 2,
                             ),
                             decoration: BoxDecoration(
-                              color: color.withOpacity(0.1),
+                              color: levelColor.withOpacity(0.1),
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(levelIcon, size: 8, color: levelColor),
+                                const SizedBox(width: 4),
+                                Text(
+                                  _formatLevelName(level),
+                                  style: TextStyle(
+                                    fontSize: 10,
+                                    color: levelColor,
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          // Category Badge
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 6,
+                              vertical: 2,
+                            ),
+                            decoration: BoxDecoration(
+                              color: categoryColor.withOpacity(0.1),
                               borderRadius: BorderRadius.circular(4),
                             ),
                             child: Text(
-                              type,
+                              _formatCategoryName(category),
                               style: TextStyle(
                                 fontSize: 10,
-                                color: color,
+                                color: categoryColor,
                                 fontWeight: FontWeight.w500,
                               ),
                             ),
@@ -654,7 +934,7 @@ class _LogsPageState extends State<LogsPage> {
                           ),
                           const SizedBox(width: 4),
                           Text(
-                            _formatTimestamp(log['created_at']),
+                            _formatTimestamp(log['timestamp']),
                             style: TextStyle(
                               fontSize: 12,
                               color: AppTheme.textSecondary,
@@ -778,27 +1058,53 @@ class _LogDetailsDialog extends StatelessWidget {
     }
   }
 
-  Color _getTypeColor(String type) {
-    switch (type) {
-      case 'Authentication':
-        return Colors.blue;
-      case 'Account Management':
-        return Colors.green;
-      case 'Budget Management':
-        return Colors.purple;
-      case 'Expense Management':
-        return Colors.orange;
-      case 'System':
+  Color _getLevelColor(String level) {
+    switch (level) {
+      case 'debug':
         return Colors.grey;
+      case 'info':
+        return Colors.blue;
+      case 'warning':
+        return Colors.orange;
+      case 'error':
+        return Colors.red;
+      case 'critical':
+        return Colors.red[900]!;
       default:
         return AppTheme.primaryColor;
     }
   }
 
+  String _formatCategoryName(String category) {
+    switch (category) {
+      case 'authentication':
+        return 'Authentication';
+      case 'accountManagement':
+        return 'Account Management';
+      case 'budgetManagement':
+        return 'Budget Management';
+      case 'expenseManagement':
+        return 'Expense Management';
+      case 'system':
+        return 'System';
+      case 'userAction':
+        return 'User Action';
+      case 'error':
+        return 'Error';
+      case 'performance':
+        return 'Performance';
+      case 'security':
+        return 'Security';
+      default:
+        return category;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    final type = log['type'] ?? 'Unknown';
-    final color = _getTypeColor(type);
+    final level = log['level'] ?? 'info';
+    final category = log['category'] ?? 'unknown';
+    final color = _getLevelColor(level);
 
     return AlertDialog(
       title: Row(
@@ -824,17 +1130,22 @@ class _LogDetailsDialog extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            _buildDetailRow('Description', log['log_desc'] ?? 'No description'),
-            _buildDetailRow('Type', type),
+            _buildDetailRow('Message', log['message'] ?? 'No message'),
+            _buildDetailRow('Level', (log['level'] ?? 'info').toUpperCase()),
+            _buildDetailRow('Category', _formatCategoryName(category)),
             _buildDetailRow('Log ID', log['log_id'] ?? 'Unknown'),
-            _buildDetailRow('Timestamp', _formatTimestamp(log['created_at'])),
+            _buildDetailRow('Timestamp', _formatTimestamp(log['timestamp'])),
             _buildDetailRow('User', log['user_name'] ?? 'System'),
-            if (log['user_email'] != null)
+            if (log['user_email'] != null && log['user_email'] != 'N/A')
               _buildDetailRow('Email', log['user_email']),
-            if (log['user_role'] != null)
+            if (log['user_role'] != null && log['user_role'] != 'N/A')
               _buildDetailRow('Role', log['user_role']),
             if (log['company_id'] != null)
               _buildDetailRow('Company ID', log['company_id']),
+            if (log['data'] != null)
+              _buildDetailRow('Additional Data', log['data'].toString()),
+            if (log['stack_trace'] != null)
+              _buildDetailRow('Stack Trace', log['stack_trace']),
           ],
         ),
       ),
@@ -865,7 +1176,13 @@ class _LogDetailsDialog extends StatelessWidget {
             ),
           ),
           Expanded(
-            child: Text(value, style: TextStyle(color: AppTheme.textPrimary)),
+            child: Text(
+              value,
+              style: TextStyle(color: AppTheme.textPrimary),
+              maxLines:
+                  label == 'Stack Trace' || label == 'Additional Data' ? 10 : 3,
+              overflow: TextOverflow.ellipsis,
+            ),
           ),
         ],
       ),

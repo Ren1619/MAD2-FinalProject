@@ -54,7 +54,7 @@ class MyApp extends StatelessWidget {
           '/signup': (context) => const SignupPage(),
           '/admin-dashboard': (context) => const AdminDashboard(),
           '/budget-manager-dashboard':
-              (context) => const BudgetManagerDashboard(),
+              (context) => const BudgetManagerBudgetsPage(),
           '/financial-officer-dashboard':
               (context) => const FinancialOfficerBudgetsPage(), // Updated route
           '/spender-dashboard': (context) => const AuthorizedSpenderDashboard(),
@@ -145,7 +145,10 @@ class _AuthWrapperState extends State<AuthWrapper> {
 
                 // Update app state with current user
                 WidgetsBinding.instance.addPostFrameCallback((_) {
-                  context.read<AppStateNotifier>().setCurrentUser(userData);
+                  if (mounted) {
+                    // Add this check
+                    context.read<AppStateNotifier>().setCurrentUser(userData);
+                  }
                 });
 
                 // Route to appropriate dashboard based on role
@@ -153,7 +156,7 @@ class _AuthWrapperState extends State<AuthWrapper> {
                   case FirebaseAuthService.ROLE_ADMIN:
                     return const AdminDashboard();
                   case FirebaseAuthService.ROLE_BUDGET_MANAGER:
-                    return const BudgetManagerDashboard();
+                    return const BudgetManagerBudgetsPage();
                   case FirebaseAuthService.ROLE_FINANCIAL_OFFICER:
                     // Route Financial Officers to the BudgetsPage
                     return FinancialOfficerBudgetsPage(userData: userData);
@@ -179,130 +182,38 @@ class FinancialOfficerBudgetsPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Use BudgetsPage as the main page for Financial Officers
-    // No drawer needed since they only have access to budgets
     return BudgetsPage(
       userData: userData,
-      // No onOpenDrawer since Financial Officers don't need a drawer
-      // The BudgetsPage will automatically show the Create Budget button
-      // for Financial Officers based on their role
     );
   }
 }
 
-// Keep the existing placeholder dashboards for other roles
-class BudgetManagerDashboard extends StatelessWidget {
-  const BudgetManagerDashboard({super.key});
+class BudgetManagerBudgetsPage extends StatelessWidget {
+  final Map<String, dynamic>? userData;
+
+  const BudgetManagerBudgetsPage({super.key, this.userData});
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Budget Manager Dashboard'),
-        backgroundColor: Colors.white,
-        elevation: 0,
-        actions: [
-          PopupMenuButton<String>(
-            icon: CircleAvatar(
-              backgroundColor: Colors.blue[100],
-              child: Icon(Icons.person, color: Colors.blue[800]),
-            ),
-            onSelected: (value) async {
-              if (value == 'logout') {
-                await context.read<FirebaseAuthService>().signOut();
-              }
-            },
-            itemBuilder:
-                (context) => [
-                  const PopupMenuItem(
-                    value: 'profile',
-                    child: Row(
-                      children: [
-                        Icon(Icons.person),
-                        SizedBox(width: 8),
-                        Text('Profile'),
-                      ],
-                    ),
-                  ),
-                  const PopupMenuItem(
-                    value: 'logout',
-                    child: Row(
-                      children: [
-                        Icon(Icons.logout, color: Colors.red),
-                        SizedBox(width: 8),
-                        Text('Logout', style: TextStyle(color: Colors.red)),
-                      ],
-                    ),
-                  ),
-                ],
-          ),
-        ],
-      ),
-      body: const Center(
-        child: Text(
-          'Budget Manager Dashboard\n(To be implemented)',
-          textAlign: TextAlign.center,
-          style: TextStyle(fontSize: 18),
-        ),
-      ),
+    // Use BudgetsPage as the main page for Budget Managers
+    return BudgetsPage(
+      userData: userData,
+      // No onOpenDrawer since they only need access to budgets
     );
   }
 }
 
 class AuthorizedSpenderDashboard extends StatelessWidget {
-  const AuthorizedSpenderDashboard({super.key});
+  final Map<String, dynamic>? userData;
+
+  const AuthorizedSpenderDashboard({super.key, this.userData});
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Authorized Spender Dashboard'),
-        backgroundColor: Colors.white,
-        elevation: 0,
-        actions: [
-          PopupMenuButton<String>(
-            icon: CircleAvatar(
-              backgroundColor: Colors.blue[100],
-              child: Icon(Icons.person, color: Colors.blue[800]),
-            ),
-            onSelected: (value) async {
-              if (value == 'logout') {
-                await context.read<FirebaseAuthService>().signOut();
-              }
-            },
-            itemBuilder:
-                (context) => [
-                  const PopupMenuItem(
-                    value: 'profile',
-                    child: Row(
-                      children: [
-                        Icon(Icons.person),
-                        SizedBox(width: 8),
-                        Text('Profile'),
-                      ],
-                    ),
-                  ),
-                  const PopupMenuItem(
-                    value: 'logout',
-                    child: Row(
-                      children: [
-                        Icon(Icons.logout, color: Colors.red),
-                        SizedBox(width: 8),
-                        Text('Logout', style: TextStyle(color: Colors.red)),
-                      ],
-                    ),
-                  ),
-                ],
-          ),
-        ],
-      ),
-      body: const Center(
-        child: Text(
-          'Authorized Spender Dashboard\n(To be implemented)',
-          textAlign: TextAlign.center,
-          style: TextStyle(fontSize: 18),
-        ),
-      ),
+    // Use BudgetsPage as the main page for Budget Managers
+    return BudgetsPage(
+      userData: userData,
+      // No onOpenDrawer since they only need access to budgets
     );
   }
 }

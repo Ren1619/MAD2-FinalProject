@@ -443,13 +443,22 @@ class CustomAppBar extends StatelessWidget implements PreferredSizeWidget {
               ),
               ElevatedButton(
                 onPressed: () async {
+                  // Close the dialog first
                   Navigator.pop(context);
-                  await context.read<FirebaseAuthService>().signOut();
-                  Navigator.pushNamedAndRemoveUntil(
-                    context,
-                    '/login',
-                    (route) => false,
-                  );
+
+                  // Then handle the logout in a try-catch block
+                  try {
+                    await context.read<FirebaseAuthService>().signOut();
+                    // Use replacement to clear the navigation stack
+                    Navigator.pushNamedAndRemoveUntil(
+                      context,
+                      '/login',
+                      (route) => false,
+                    );
+                  } catch (e) {
+                    print('Error during logout: $e');
+                    // Show error if needed
+                  }
                 },
                 style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
                 child: const Text(

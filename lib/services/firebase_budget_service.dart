@@ -1,11 +1,13 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:moneyger_finalproject/services/app_logger.dart';
 import '../utils/uuid_generator.dart';
 import '../utils/image_utils.dart';
 
 class FirebaseBudgetService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final FirebaseAuth _auth = FirebaseAuth.instance;
+  final AppLogger _logger = AppLogger();
 
   // Budget status constants
   static const String STATUS_PENDING = 'Pending for Approval';
@@ -14,7 +16,15 @@ class FirebaseBudgetService {
   static const String STATUS_FOR_REVISION = 'For Revision';
 
   // Get current user ID
-  String? get _currentUserId => _auth.currentUser?.uid;
+  String? get _currentUserId {
+    final userId = _auth.currentUser?.uid;
+    _logger.debug(
+      'Getting current user ID',
+      category: LogCategory.authentication,
+      data: {'has_user': userId != null, 'user_id': userId},
+    );
+    return userId;
+  }
 
   // Create a new budget (Financial Officer only)
   Future<bool> createBudget({
@@ -23,212 +33,411 @@ class FirebaseBudgetService {
     required String budgetDescription,
     required List<String> authorizedSpenderIds,
   }) async {
-    try {
-      if (_currentUserId == null) {
-        print('Error: No current user ID found');
-        return false;
-      }
+    return await _logger.timeOperation(
+      'Create Budget',
+      () async {
+        try {
+          if (_currentUserId == null) {
+            await _logger.error(
+              'Budget creation failed - no current user ID found',
+              category: LogCategory.budgetManagement,
+              data: {'budget_name': budgetName, 'budget_amount': budgetAmount},
+            );
+            return false;
+          }
 
-      // Verify user is Financial Officer
-      final userDoc =
-          await _firestore.collection('accounts').doc(_currentUserId).get();
-      if (!userDoc.exists ||
-          userDoc.data()!['role'] !=
-              'Financial Planning and Budgeting Officer') {
-        throw 'Only Financial Planning and Budgeting Officers can create budgets';
-      }
+          await _logger.logBudgetManagement(
+            'Budget creation started',
+            budgetName: budgetName,
+            amount: budgetAmount,
+            data: {
+              'authorized_spenders_count': authorizedSpenderIds.length,
+              'description_length': budgetDescription.length,
+            },
+          );
 
-      final userData = userDoc.data()!;
-      final companyId = userData['company_id'];
+          // Verify user is Financial Officer
+          final userDoc =
+              await _firestore.collection('accounts').doc(_currentUserId).get();
+          if (!userDoc.exists) {
+            await _logger.error(
+              'Budget creation failed - user document not found',
+              category: LogCategory.budgetManagement,
+              data: {'user_id': _currentUserId, 'budget_name': budgetName},
+            );
+            return false;
+          }
 
-      // Create budget document
-      final budgetId = UuidGenerator.generateUuid();
-      await _firestore.collection('budgets').doc(budgetId).set({
-        'budget_id': budgetId,
+          final userData = userDoc.data()!;
+          final userRole = userData['role'];
+
+          if (userRole != 'Financial Planning and Budgeting Officer') {
+            await _logger.logSecurity(
+              'Unauthorized budget creation attempt',
+              level: LogLevel.warning,
+              data: {
+                'user_id': _currentUserId,
+                'user_role': userRole,
+                'user_email': userData['email'],
+                'budget_name': budgetName,
+                'budget_amount': budgetAmount,
+              },
+            );
+            throw 'Only Financial Planning and Budgeting Officers can create budgets';
+          }
+
+          final companyId = userData['company_id'];
+
+          await _logger.debug(
+            'User authorization verified for budget creation',
+            category: LogCategory.budgetManagement,
+            data: {
+              'user_role': userRole,
+              'company_id': companyId,
+              'budget_name': budgetName,
+            },
+          );
+
+          // Create budget document
+          final budgetId = UuidGenerator.generateUuid();
+
+          await _logger.debug(
+            'Creating budget document',
+            category: LogCategory.budgetManagement,
+            data: {
+              'budget_id': budgetId,
+              'budget_name': budgetName,
+              'status': STATUS_PENDING,
+            },
+          );
+
+          await _firestore.collection('budgets').doc(budgetId).set({
+            'budget_id': budgetId,
+            'budget_name': budgetName,
+            'budget_amount': budgetAmount,
+            'budget_description': budgetDescription,
+            'status': STATUS_PENDING,
+            'created_by': _currentUserId,
+            'company_id': companyId,
+            'created_at': FieldValue.serverTimestamp(),
+          });
+
+          await _logger.debug(
+            'Budget document created, adding authorized spenders',
+            category: LogCategory.budgetManagement,
+            data: {
+              'budget_id': budgetId,
+              'spenders_to_add': authorizedSpenderIds.length,
+            },
+          );
+
+          // Create authorized spenders records
+          int spendersAdded = 0;
+          for (String spenderId in authorizedSpenderIds) {
+            try {
+              final authId = UuidGenerator.generateUuid();
+              await _firestore
+                  .collection('budgets_authorized_spenders')
+                  .doc(authId)
+                  .set({
+                    'budget_auth_id': authId,
+                    'budget_id': budgetId,
+                    'account_id': spenderId,
+                    'created_at': FieldValue.serverTimestamp(),
+                  });
+              spendersAdded++;
+            } catch (e) {
+              await _logger.error(
+                'Failed to add authorized spender',
+                category: LogCategory.budgetManagement,
+                error: e,
+                data: {'budget_id': budgetId, 'spender_id': spenderId},
+              );
+            }
+          }
+
+          await _logger.logBudgetManagement(
+            'Budget created successfully',
+            budgetId: budgetId,
+            budgetName: budgetName,
+            amount: budgetAmount,
+            data: {
+              'company_id': companyId,
+              'status': STATUS_PENDING,
+              'authorized_spenders_added': spendersAdded,
+              'total_spenders_requested': authorizedSpenderIds.length,
+              'created_by': _currentUserId,
+            },
+          );
+
+          return true;
+        } catch (e) {
+          await _logger.error(
+            'Budget creation failed with exception',
+            category: LogCategory.budgetManagement,
+            error: e,
+            data: {
+              'budget_name': budgetName,
+              'budget_amount': budgetAmount,
+              'authorized_spenders_count': authorizedSpenderIds.length,
+            },
+          );
+          return false;
+        }
+      },
+      data: {
         'budget_name': budgetName,
         'budget_amount': budgetAmount,
-        'budget_description': budgetDescription,
-        'status': STATUS_PENDING,
-        'created_by': _currentUserId,
-        'company_id': companyId,
-        'created_at': FieldValue.serverTimestamp(),
-      });
-
-      // Create authorized spenders records
-      for (String spenderId in authorizedSpenderIds) {
-        final authId = UuidGenerator.generateUuid();
-        await _firestore
-            .collection('budgets_authorized_spenders')
-            .doc(authId)
-            .set({
-              'budget_auth_id': authId,
-              'budget_id': budgetId,
-              'account_id': spenderId,
-              'created_at': FieldValue.serverTimestamp(),
-            });
-      }
-
-      // Log activity
-      await _logActivity(
-        'New budget created: $budgetName - \$${budgetAmount.toStringAsFixed(2)}',
-        'Budget Management',
-        companyId,
-      );
-
-      return true;
-    } catch (e) {
-      print('Error creating budget: $e');
-      return false;
-    }
+        'operation': 'create_budget',
+      },
+    );
   }
 
   // Get budgets by status for current user's role - FIXED VERSION
   Future<List<Map<String, dynamic>>> getBudgetsByStatus(String status) async {
-    try {
-      // Add more detailed logging
-      print('Getting budgets by status: $status');
-      print('Current user ID: $_currentUserId');
+    return await _logger.timeOperation(
+      'Get Budgets by Status',
+      () async {
+        try {
+          await _logger.debug(
+            'Starting budget retrieval by status',
+            category: LogCategory.budgetManagement,
+            data: {
+              'requested_status': status,
+              'current_user_id': _currentUserId,
+            },
+          );
 
-      if (_currentUserId == null) {
-        print('Error: No current user ID found');
-        return [];
-      }
-
-      // Get current user data to determine role
-      final userDoc =
-          await _firestore.collection('accounts').doc(_currentUserId).get();
-      if (!userDoc.exists) {
-        print('Error: User document does not exist for ID: $_currentUserId');
-        return [];
-      }
-
-      final userData = userDoc.data()!;
-      final userRole = userData['role'];
-      final companyId = userData['company_id'];
-
-      print('User role: $userRole');
-      print('Company ID: $companyId');
-
-      List<Map<String, dynamic>> budgets = [];
-
-      switch (userRole) {
-        case 'Administrator':
-        case 'Budget Manager':
-          // Admin and Budget Manager can see all budgets in their company
-          print('Fetching budgets for admin/budget manager...');
-          try {
-            // Use simpler query without orderBy to avoid index issues
-            final snapshot =
-                await _firestore
-                    .collection('budgets')
-                    .where('company_id', isEqualTo: companyId)
-                    .where('status', isEqualTo: status)
-                    .get();
-
-            print('Found ${snapshot.docs.length} budgets');
-            budgets = await _processBudgetDocs(snapshot.docs);
-
-            // Sort in dart instead of firestore
-            budgets.sort((a, b) {
-              final aTime = a['created_at'] as Timestamp?;
-              final bTime = b['created_at'] as Timestamp?;
-              if (aTime == null || bTime == null) return 0;
-              return bTime.compareTo(aTime);
-            });
-          } catch (e) {
-            print('Error in admin/budget manager query: $e');
-            // Try fallback query without compound index
-            final snapshot =
-                await _firestore
-                    .collection('budgets')
-                    .where('company_id', isEqualTo: companyId)
-                    .get();
-
-            print('Fallback query found ${snapshot.docs.length} budgets');
-            final allBudgets = await _processBudgetDocs(snapshot.docs);
-            budgets =
-                allBudgets
-                    .where((budget) => budget['status'] == status)
-                    .toList();
-
-            // Sort in dart
-            budgets.sort((a, b) {
-              final aTime = a['created_at'] as Timestamp?;
-              final bTime = b['created_at'] as Timestamp?;
-              if (aTime == null || bTime == null) return 0;
-              return bTime.compareTo(aTime);
-            });
-          }
-          break;
-
-        case 'Financial Planning and Budgeting Officer':
-          // Financial Officer can only see budgets they created
-          print('Fetching budgets for financial officer...');
-          try {
-            // Use simpler query
-            final snapshot =
-                await _firestore
-                    .collection('budgets')
-                    .where('created_by', isEqualTo: _currentUserId)
-                    .where('status', isEqualTo: status)
-                    .get();
-
-            print(
-              'Found ${snapshot.docs.length} budgets for financial officer',
+          if (_currentUserId == null) {
+            await _logger.error(
+              'Cannot get budgets - no current user ID found',
+              category: LogCategory.budgetManagement,
+              data: {'requested_status': status},
             );
-            budgets = await _processBudgetDocs(snapshot.docs);
-
-            // Sort in dart
-            budgets.sort((a, b) {
-              final aTime = a['created_at'] as Timestamp?;
-              final bTime = b['created_at'] as Timestamp?;
-              if (aTime == null || bTime == null) return 0;
-              return bTime.compareTo(aTime);
-            });
-          } catch (e) {
-            print('Error in financial officer query: $e');
-            // Try fallback query
-            final snapshot =
-                await _firestore
-                    .collection('budgets')
-                    .where('created_by', isEqualTo: _currentUserId)
-                    .get();
-
-            print('Fallback query found ${snapshot.docs.length} budgets');
-            final allBudgets = await _processBudgetDocs(snapshot.docs);
-            budgets =
-                allBudgets
-                    .where((budget) => budget['status'] == status)
-                    .toList();
-
-            // Sort in dart
-            budgets.sort((a, b) {
-              final aTime = a['created_at'] as Timestamp?;
-              final bTime = b['created_at'] as Timestamp?;
-              if (aTime == null || bTime == null) return 0;
-              return bTime.compareTo(aTime);
-            });
+            return [];
           }
-          break;
 
-        case 'Authorized Spender':
-          // Authorized Spenders can only see budgets they are assigned to
-          print('Fetching budgets for authorized spender...');
-          budgets = await _getBudgetsForAuthorizedSpender(status);
-          break;
+          // Get current user data to determine role
+          final userDoc =
+              await _firestore.collection('accounts').doc(_currentUserId).get();
+          if (!userDoc.exists) {
+            await _logger.error(
+              'Cannot get budgets - user document does not exist',
+              category: LogCategory.budgetManagement,
+              data: {'user_id': _currentUserId, 'requested_status': status},
+            );
+            return [];
+          }
 
-        default:
-          print('Unknown user role: $userRole');
+          final userData = userDoc.data()!;
+          final userRole = userData['role'];
+          final companyId = userData['company_id'];
+
+          await _logger.debug(
+            'User data retrieved for budget query',
+            category: LogCategory.budgetManagement,
+            data: {
+              'user_role': userRole,
+              'company_id': companyId,
+              'requested_status': status,
+            },
+          );
+
+          List<Map<String, dynamic>> budgets = [];
+
+          switch (userRole) {
+            case 'Administrator':
+            case 'Budget Manager':
+              await _logger.debug(
+                'Fetching budgets for admin/budget manager',
+                category: LogCategory.budgetManagement,
+                data: {
+                  'user_role': userRole,
+                  'company_id': companyId,
+                  'status': status,
+                },
+              );
+
+              try {
+                final snapshot =
+                    await _firestore
+                        .collection('budgets')
+                        .where('company_id', isEqualTo: companyId)
+                        .where('status', isEqualTo: status)
+                        .get();
+
+                await _logger.debug(
+                  'Budget query completed successfully',
+                  category: LogCategory.budgetManagement,
+                  data: {
+                    'budgets_found': snapshot.docs.length,
+                    'query_type': 'direct',
+                  },
+                );
+
+                budgets = await _processBudgetDocs(snapshot.docs);
+
+                // Sort in dart instead of firestore
+                budgets.sort((a, b) {
+                  final aTime = a['created_at'] as Timestamp?;
+                  final bTime = b['created_at'] as Timestamp?;
+                  if (aTime == null || bTime == null) return 0;
+                  return bTime.compareTo(aTime);
+                });
+              } catch (e) {
+                await _logger.warning(
+                  'Direct budget query failed, using fallback',
+                  category: LogCategory.budgetManagement,
+                  data: {
+                    'error': e.toString(),
+                    'fallback_strategy': 'filter_in_memory',
+                  },
+                );
+
+                // Try fallback query without compound index
+                final snapshot =
+                    await _firestore
+                        .collection('budgets')
+                        .where('company_id', isEqualTo: companyId)
+                        .get();
+
+                await _logger.debug(
+                  'Fallback query completed',
+                  category: LogCategory.budgetManagement,
+                  data: {
+                    'total_budgets_found': snapshot.docs.length,
+                    'will_filter_by_status': status,
+                  },
+                );
+
+                final allBudgets = await _processBudgetDocs(snapshot.docs);
+                budgets =
+                    allBudgets
+                        .where((budget) => budget['status'] == status)
+                        .toList();
+
+                // Sort in dart
+                budgets.sort((a, b) {
+                  final aTime = a['created_at'] as Timestamp?;
+                  final bTime = b['created_at'] as Timestamp?;
+                  if (aTime == null || bTime == null) return 0;
+                  return bTime.compareTo(aTime);
+                });
+              }
+              break;
+
+            case 'Financial Planning and Budgeting Officer':
+              await _logger.debug(
+                'Fetching budgets for financial officer',
+                category: LogCategory.budgetManagement,
+                data: {'created_by': _currentUserId, 'status': status},
+              );
+
+              try {
+                final snapshot =
+                    await _firestore
+                        .collection('budgets')
+                        .where('created_by', isEqualTo: _currentUserId)
+                        .where('status', isEqualTo: status)
+                        .get();
+
+                await _logger.debug(
+                  'Financial officer budget query completed',
+                  category: LogCategory.budgetManagement,
+                  data: {
+                    'budgets_found': snapshot.docs.length,
+                    'query_type': 'direct',
+                  },
+                );
+
+                budgets = await _processBudgetDocs(snapshot.docs);
+
+                // Sort in dart
+                budgets.sort((a, b) {
+                  final aTime = a['created_at'] as Timestamp?;
+                  final bTime = b['created_at'] as Timestamp?;
+                  if (aTime == null || bTime == null) return 0;
+                  return bTime.compareTo(aTime);
+                });
+              } catch (e) {
+                await _logger.warning(
+                  'Direct financial officer query failed, using fallback',
+                  category: LogCategory.budgetManagement,
+                  data: {
+                    'error': e.toString(),
+                    'fallback_strategy': 'filter_in_memory',
+                  },
+                );
+
+                // Try fallback query
+                final snapshot =
+                    await _firestore
+                        .collection('budgets')
+                        .where('created_by', isEqualTo: _currentUserId)
+                        .get();
+
+                final allBudgets = await _processBudgetDocs(snapshot.docs);
+                budgets =
+                    allBudgets
+                        .where((budget) => budget['status'] == status)
+                        .toList();
+
+                // Sort in dart
+                budgets.sort((a, b) {
+                  final aTime = a['created_at'] as Timestamp?;
+                  final bTime = b['created_at'] as Timestamp?;
+                  if (aTime == null || bTime == null) return 0;
+                  return bTime.compareTo(aTime);
+                });
+              }
+              break;
+
+            case 'Authorized Spender':
+              await _logger.debug(
+                'Fetching budgets for authorized spender',
+                category: LogCategory.budgetManagement,
+                data: {'spender_id': _currentUserId, 'status': status},
+              );
+              budgets = await _getBudgetsForAuthorizedSpender(status);
+              break;
+
+            default:
+              await _logger.logSecurity(
+                'Unknown user role attempting to access budgets',
+                level: LogLevel.warning,
+                data: {
+                  'user_id': _currentUserId,
+                  'unknown_role': userRole,
+                  'company_id': companyId,
+                },
+              );
+              return [];
+          }
+
+          await _logger.info(
+            'Budget retrieval completed successfully',
+            category: LogCategory.budgetManagement,
+            data: {
+              'user_role': userRole,
+              'requested_status': status,
+              'budgets_returned': budgets.length,
+              'company_id': companyId,
+            },
+          );
+
+          return budgets;
+        } catch (e) {
+          await _logger.error(
+            'Failed to get budgets by status',
+            category: LogCategory.budgetManagement,
+            error: e,
+            data: {'requested_status': status, 'user_id': _currentUserId},
+          );
           return [];
-      }
-
-      print('Returning ${budgets.length} budgets');
-      return budgets;
-    } catch (e) {
-      print('Error getting budgets by status: $e');
-      print('Stack trace: ${StackTrace.current}');
-      return [];
-    }
+        }
+      },
+      data: {'requested_status': status, 'operation': 'get_budgets_by_status'},
+    );
   }
 
   // Get budgets for authorized spender
@@ -236,7 +445,11 @@ class FirebaseBudgetService {
     String status,
   ) async {
     try {
-      print('Getting budgets for authorized spender with status: $status');
+      await _logger.debug(
+        'Getting budgets for authorized spender',
+        category: LogCategory.budgetManagement,
+        data: {'spender_id': _currentUserId, 'status': status},
+      );
 
       // Get all budget_auth records for this user
       final authSnapshot =
@@ -245,9 +458,23 @@ class FirebaseBudgetService {
               .where('account_id', isEqualTo: _currentUserId)
               .get();
 
-      print('Found ${authSnapshot.docs.length} budget authorization records');
+      await _logger.debug(
+        'Budget authorization records retrieved',
+        category: LogCategory.budgetManagement,
+        data: {
+          'authorization_records_found': authSnapshot.docs.length,
+          'spender_id': _currentUserId,
+        },
+      );
 
-      if (authSnapshot.docs.isEmpty) return [];
+      if (authSnapshot.docs.isEmpty) {
+        await _logger.info(
+          'No budget authorizations found for spender',
+          category: LogCategory.budgetManagement,
+          data: {'spender_id': _currentUserId},
+        );
+        return [];
+      }
 
       // Get budget IDs
       final budgetIds =
@@ -255,24 +482,55 @@ class FirebaseBudgetService {
               .map((doc) => doc.data()['budget_id'] as String)
               .toList();
 
-      print('Budget IDs: $budgetIds');
+      await _logger.debug(
+        'Retrieved budget IDs for authorized spender',
+        category: LogCategory.budgetManagement,
+        data: {'budget_ids': budgetIds, 'spender_id': _currentUserId},
+      );
 
       // Get budgets with the specified status
       List<Map<String, dynamic>> budgets = [];
+      int processedBudgets = 0;
+      int matchingBudgets = 0;
+
       for (String budgetId in budgetIds) {
         try {
           final budgetDoc =
               await _firestore.collection('budgets').doc(budgetId).get();
+          processedBudgets++;
+
           if (budgetDoc.exists) {
             final budgetData = budgetDoc.data()!;
-            print('Budget ${budgetId} status: ${budgetData['status']}');
+
+            await _logger.debug(
+              'Processing budget for authorized spender',
+              category: LogCategory.budgetManagement,
+              data: {
+                'budget_id': budgetId,
+                'budget_status': budgetData['status'],
+                'requested_status': status,
+              },
+            );
+
             if (budgetData['status'] == status) {
               final processedBudget = await _processBudgetDoc(budgetDoc);
               budgets.add(processedBudget);
+              matchingBudgets++;
             }
+          } else {
+            await _logger.warning(
+              'Budget document not found for authorized spender',
+              category: LogCategory.budgetManagement,
+              data: {'budget_id': budgetId, 'spender_id': _currentUserId},
+            );
           }
         } catch (e) {
-          print('Error processing budget $budgetId: $e');
+          await _logger.error(
+            'Error processing budget for authorized spender',
+            category: LogCategory.budgetManagement,
+            error: e,
+            data: {'budget_id': budgetId, 'spender_id': _currentUserId},
+          );
         }
       }
 
@@ -284,10 +542,27 @@ class FirebaseBudgetService {
         return bTime.compareTo(aTime);
       });
 
-      print('Returning ${budgets.length} budgets for authorized spender');
+      await _logger.info(
+        'Completed budget retrieval for authorized spender',
+        category: LogCategory.budgetManagement,
+        data: {
+          'spender_id': _currentUserId,
+          'requested_status': status,
+          'total_authorizations': budgetIds.length,
+          'processed_budgets': processedBudgets,
+          'matching_budgets': matchingBudgets,
+          'returned_budgets': budgets.length,
+        },
+      );
+
       return budgets;
     } catch (e) {
-      print('Error getting budgets for authorized spender: $e');
+      await _logger.error(
+        'Failed to get budgets for authorized spender',
+        category: LogCategory.budgetManagement,
+        error: e,
+        data: {'spender_id': _currentUserId, 'status': status},
+      );
       return [];
     }
   }
@@ -297,14 +572,44 @@ class FirebaseBudgetService {
     List<QueryDocumentSnapshot> docs,
   ) async {
     List<Map<String, dynamic>> budgets = [];
+    int processedCount = 0;
+    int errorCount = 0;
+
+    await _logger.debug(
+      'Starting to process budget documents',
+      category: LogCategory.budgetManagement,
+      data: {'total_docs': docs.length},
+    );
+
     for (var doc in docs) {
       try {
         final budgetData = await _processBudgetDoc(doc);
         budgets.add(budgetData);
+        processedCount++;
       } catch (e) {
-        print('Error processing budget document ${doc.id}: $e');
+        errorCount++;
+        await _logger.error(
+          'Error processing budget document',
+          category: LogCategory.budgetManagement,
+          error: e,
+          data: {
+            'document_id': doc.id,
+            'budget_name': (doc.data() as Map<String, dynamic>?)?['budget_name'],
+          },
+        );
       }
     }
+
+    await _logger.debug(
+      'Completed processing budget documents',
+      category: LogCategory.budgetManagement,
+      data: {
+        'total_docs': docs.length,
+        'processed_successfully': processedCount,
+        'errors': errorCount,
+      },
+    );
+
     return budgets;
   }
 
@@ -313,6 +618,15 @@ class FirebaseBudgetService {
     final data = doc.data() as Map<String, dynamic>;
 
     try {
+      await _logger.debug(
+        'Processing single budget document',
+        category: LogCategory.budgetManagement,
+        data: {
+          'budget_id': data['budget_id'],
+          'budget_name': data['budget_name'],
+        },
+      );
+
       // Get creator information
       if (data['created_by'] != null) {
         try {
@@ -326,9 +640,27 @@ class FirebaseBudgetService {
             data['created_by_name'] =
                 '${creatorData['f_name']} ${creatorData['l_name']}';
             data['created_by_email'] = creatorData['email'];
+          } else {
+            await _logger.warning(
+              'Creator document not found for budget',
+              category: LogCategory.budgetManagement,
+              data: {
+                'budget_id': data['budget_id'],
+                'created_by': data['created_by'],
+              },
+            );
+            data['created_by_name'] = 'Unknown User';
           }
         } catch (e) {
-          print('Error getting creator info: $e');
+          await _logger.error(
+            'Error getting budget creator info',
+            category: LogCategory.budgetManagement,
+            error: e,
+            data: {
+              'budget_id': data['budget_id'],
+              'created_by': data['created_by'],
+            },
+          );
           data['created_by_name'] = 'Unknown User';
         }
       }
@@ -358,12 +690,34 @@ class FirebaseBudgetService {
               });
             }
           } catch (e) {
-            print('Error getting spender info: $e');
+            await _logger.error(
+              'Error getting spender info for budget',
+              category: LogCategory.budgetManagement,
+              error: e,
+              data: {
+                'budget_id': data['budget_id'],
+                'spender_auth_id': authDoc.id,
+              },
+            );
           }
         }
         data['authorized_spenders'] = authorizedSpenders;
+
+        await _logger.debug(
+          'Retrieved authorized spenders for budget',
+          category: LogCategory.budgetManagement,
+          data: {
+            'budget_id': data['budget_id'],
+            'spenders_count': authorizedSpenders.length,
+          },
+        );
       } catch (e) {
-        print('Error getting authorized spenders: $e');
+        await _logger.error(
+          'Error getting authorized spenders for budget',
+          category: LogCategory.budgetManagement,
+          error: e,
+          data: {'budget_id': data['budget_id']},
+        );
         data['authorized_spenders'] = [];
       }
 
@@ -377,6 +731,7 @@ class FirebaseBudgetService {
 
         double totalExpenses = 0;
         int expenseCount = expensesSnapshot.docs.length;
+
         for (var expenseDoc in expensesSnapshot.docs) {
           final expenseData = expenseDoc.data();
           totalExpenses += (expenseData['expense_amt'] as num).toDouble();
@@ -386,17 +741,42 @@ class FirebaseBudgetService {
         data['expense_count'] = expenseCount;
         data['remaining_amount'] =
             (data['budget_amount'] as num).toDouble() - totalExpenses;
+
+        await _logger.debug(
+          'Retrieved expense summary for budget',
+          category: LogCategory.budgetManagement,
+          data: {
+            'budget_id': data['budget_id'],
+            'total_expenses': totalExpenses,
+            'expense_count': expenseCount,
+            'remaining_amount': data['remaining_amount'],
+          },
+        );
       } catch (e) {
-        print('Error getting expenses summary: $e');
+        await _logger.error(
+          'Error getting expenses summary for budget',
+          category: LogCategory.budgetManagement,
+          error: e,
+          data: {'budget_id': data['budget_id']},
+        );
         data['total_expenses'] = 0.0;
         data['expense_count'] = 0;
         data['remaining_amount'] = data['budget_amount'] ?? 0.0;
       }
-    } catch (e) {
-      print('Error processing budget document: $e');
-    }
 
-    return data;
+      return data;
+    } catch (e) {
+      await _logger.error(
+        'Error processing budget document',
+        category: LogCategory.budgetManagement,
+        error: e,
+        data: {
+          'budget_id': data['budget_id'],
+          'budget_name': data['budget_name'],
+        },
+      );
+      rethrow;
+    }
   }
 
   // Update budget status (Budget Manager only)
@@ -405,48 +785,126 @@ class FirebaseBudgetService {
     String newStatus, {
     String? notes,
   }) async {
-    try {
-      if (_currentUserId == null) return false;
+    return await _logger.timeOperation(
+      'Update Budget Status',
+      () async {
+        try {
+          if (_currentUserId == null) {
+            await _logger.error(
+              'Budget status update failed - no current user ID',
+              category: LogCategory.budgetManagement,
+              data: {'budget_id': budgetId, 'new_status': newStatus},
+            );
+            return false;
+          }
 
-      // Verify user is Budget Manager or Admin
-      final userDoc =
-          await _firestore.collection('accounts').doc(_currentUserId).get();
-      if (!userDoc.exists) return false;
+          await _logger.debug(
+            'Starting budget status update',
+            category: LogCategory.budgetManagement,
+            data: {
+              'budget_id': budgetId,
+              'new_status': newStatus,
+              'has_notes': notes != null,
+              'user_id': _currentUserId,
+            },
+          );
 
-      final userRole = userDoc.data()!['role'];
-      if (userRole != 'Budget Manager' && userRole != 'Administrator') {
-        throw 'Only Budget Managers and Administrators can update budget status';
-      }
+          // Verify user is Budget Manager or Admin
+          final userDoc =
+              await _firestore.collection('accounts').doc(_currentUserId).get();
+          if (!userDoc.exists) {
+            await _logger.error(
+              'Budget status update failed - user document not found',
+              category: LogCategory.budgetManagement,
+              data: {'user_id': _currentUserId, 'budget_id': budgetId},
+            );
+            return false;
+          }
 
-      Map<String, dynamic> updateData = {
-        'status': newStatus,
-        'updated_at': FieldValue.serverTimestamp(),
-        'updated_by': _currentUserId,
-      };
+          final userRole = userDoc.data()!['role'];
+          if (userRole != 'Budget Manager') {
+            await _logger.logSecurity(
+              'Unauthorized budget status update attempt',
+              level: LogLevel.warning,
+              data: {
+                'user_id': _currentUserId,
+                'user_role': userRole,
+                'budget_id': budgetId,
+                'attempted_status': newStatus,
+              },
+            );
+            throw 'Only Budget Managers can update budget status';
+          }
 
-      if (notes != null) {
-        updateData['notes'] = notes;
-      }
+          await _logger.debug(
+            'User authorization verified for budget status update',
+            category: LogCategory.budgetManagement,
+            data: {'user_role': userRole, 'budget_id': budgetId},
+          );
 
-      await _firestore.collection('budgets').doc(budgetId).update(updateData);
+          Map<String, dynamic> updateData = {
+            'status': newStatus,
+            'updated_at': FieldValue.serverTimestamp(),
+            'updated_by': _currentUserId,
+          };
 
-      // Get budget details for logging
-      final budgetDoc =
-          await _firestore.collection('budgets').doc(budgetId).get();
-      if (budgetDoc.exists) {
-        final budgetData = budgetDoc.data()!;
-        await _logActivity(
-          'Budget status updated to $newStatus: ${budgetData['budget_name']}',
-          'Budget Management',
-          budgetData['company_id'],
-        );
-      }
+          if (notes != null) {
+            updateData['notes'] = notes;
+          }
 
-      return true;
-    } catch (e) {
-      print('Error updating budget status: $e');
-      return false;
-    }
+          await _firestore
+              .collection('budgets')
+              .doc(budgetId)
+              .update(updateData);
+
+          // Get budget details for logging
+          final budgetDoc =
+              await _firestore.collection('budgets').doc(budgetId).get();
+          if (budgetDoc.exists) {
+            final budgetData = budgetDoc.data()!;
+
+            await _logger.logBudgetManagement(
+              'Budget status updated',
+              budgetId: budgetId,
+              budgetName: budgetData['budget_name'],
+              amount: budgetData['budget_amount'],
+              data: {
+                'old_status': budgetData['status'],
+                'new_status': newStatus,
+                'updated_by': _currentUserId,
+                'has_notes': notes != null,
+                'company_id': budgetData['company_id'],
+              },
+            );
+          } else {
+            await _logger.warning(
+              'Budget document not found after status update',
+              category: LogCategory.budgetManagement,
+              data: {'budget_id': budgetId, 'new_status': newStatus},
+            );
+          }
+
+          return true;
+        } catch (e) {
+          await _logger.error(
+            'Budget status update failed with exception',
+            category: LogCategory.budgetManagement,
+            error: e,
+            data: {
+              'budget_id': budgetId,
+              'attempted_status': newStatus,
+              'user_id': _currentUserId,
+            },
+          );
+          return false;
+        }
+      },
+      data: {
+        'budget_id': budgetId,
+        'new_status': newStatus,
+        'operation': 'update_budget_status',
+      },
+    );
   }
 
   // Create expense (Authorized Spender only)
@@ -456,121 +914,285 @@ class FirebaseBudgetService {
     required double expenseAmount,
     String? receiptBase64, // Base64 encoded receipt image
   }) async {
-    try {
-      if (_currentUserId == null) return false;
+    return await _logger.timeOperation(
+      'Create Expense',
+      () async {
+        try {
+          if (_currentUserId == null) {
+            await _logger.error(
+              'Expense creation failed - no current user ID',
+              category: LogCategory.expenseManagement,
+              data: {'budget_id': budgetId, 'expense_amount': expenseAmount},
+            );
+            return false;
+          }
 
-      // Verify user is authorized spender for this budget
-      final authSnapshot =
+          await _logger.logExpenseManagement(
+            'Expense creation started',
+            description: expenseDescription,
+            amount: expenseAmount,
+            data: {
+              'budget_id': budgetId,
+              'has_receipt': receiptBase64 != null,
+              'user_id': _currentUserId,
+            },
+          );
+
+          // Verify user is authorized spender for this budget
+          final authSnapshot =
+              await _firestore
+                  .collection('budgets_authorized_spenders')
+                  .where('budget_id', isEqualTo: budgetId)
+                  .where('account_id', isEqualTo: _currentUserId)
+                  .get();
+
+          if (authSnapshot.docs.isEmpty) {
+            await _logger.logSecurity(
+              'Unauthorized expense creation attempt',
+              level: LogLevel.warning,
+              data: {
+                'user_id': _currentUserId,
+                'budget_id': budgetId,
+                'expense_amount': expenseAmount,
+                'expense_description': expenseDescription,
+              },
+            );
+            throw 'You are not authorized to create expenses for this budget';
+          }
+
+          final budgetAuthId = authSnapshot.docs.first.data()['budget_auth_id'];
+
+          await _logger.debug(
+            'User authorization verified for expense creation',
+            category: LogCategory.expenseManagement,
+            data: {
+              'budget_auth_id': budgetAuthId,
+              'budget_id': budgetId,
+              'user_id': _currentUserId,
+            },
+          );
+
+          // Get budget info for company_id
+          final budgetDoc =
+              await _firestore.collection('budgets').doc(budgetId).get();
+          if (!budgetDoc.exists) {
+            await _logger.error(
+              'Expense creation failed - budget not found',
+              category: LogCategory.expenseManagement,
+              data: {'budget_id': budgetId, 'user_id': _currentUserId},
+            );
+            throw 'Budget not found';
+          }
+
+          final budgetData = budgetDoc.data()!;
+          final companyId = budgetData['company_id'];
+
+          await _logger.debug(
+            'Budget information retrieved for expense creation',
+            category: LogCategory.expenseManagement,
+            data: {
+              'budget_id': budgetId,
+              'budget_name': budgetData['budget_name'],
+              'company_id': companyId,
+            },
+          );
+
+          // Create expense document
+          final expenseId = UuidGenerator.generateUuid();
+          Map<String, dynamic> expenseData = {
+            'expense_id': expenseId,
+            'budget_auth_id': budgetAuthId,
+            'budget_id': budgetId,
+            'expense_desc': expenseDescription,
+            'expense_amt': expenseAmount,
+            'status': 'Pending',
+            'created_by': _currentUserId,
+            'company_id': companyId,
+            'created_at': FieldValue.serverTimestamp(),
+          };
+
+          // Add receipt if provided
+          if (receiptBase64 != null) {
+            expenseData['receipt_image'] = receiptBase64;
+            expenseData['has_receipt'] = true;
+
+            await _logger.debug(
+              'Receipt image attached to expense',
+              category: LogCategory.expenseManagement,
+              data: {
+                'expense_id': expenseId,
+                'receipt_size_chars': receiptBase64.length,
+              },
+            );
+          } else {
+            expenseData['has_receipt'] = false;
+          }
+
           await _firestore
-              .collection('budgets_authorized_spenders')
-              .where('budget_id', isEqualTo: budgetId)
-              .where('account_id', isEqualTo: _currentUserId)
-              .get();
+              .collection('expenses')
+              .doc(expenseId)
+              .set(expenseData);
 
-      if (authSnapshot.docs.isEmpty) {
-        throw 'You are not authorized to create expenses for this budget';
-      }
+          await _logger.logExpenseManagement(
+            'Expense created successfully',
+            expenseId: expenseId,
+            description: expenseDescription,
+            amount: expenseAmount,
+            data: {
+              'budget_id': budgetId,
+              'budget_name': budgetData['budget_name'],
+              'company_id': companyId,
+              'has_receipt': receiptBase64 != null,
+              'status': 'Pending',
+              'created_by': _currentUserId,
+            },
+          );
 
-      final budgetAuthId = authSnapshot.docs.first.data()['budget_auth_id'];
-
-      // Get budget info for company_id
-      final budgetDoc =
-          await _firestore.collection('budgets').doc(budgetId).get();
-      if (!budgetDoc.exists) throw 'Budget not found';
-
-      final budgetData = budgetDoc.data()!;
-      final companyId = budgetData['company_id'];
-
-      // Create expense document
-      final expenseId = UuidGenerator.generateUuid();
-      Map<String, dynamic> expenseData = {
-        'expense_id': expenseId,
-        'budget_auth_id': budgetAuthId,
+          return true;
+        } catch (e) {
+          await _logger.error(
+            'Expense creation failed with exception',
+            category: LogCategory.expenseManagement,
+            error: e,
+            data: {
+              'budget_id': budgetId,
+              'expense_description': expenseDescription,
+              'expense_amount': expenseAmount,
+              'user_id': _currentUserId,
+            },
+          );
+          return false;
+        }
+      },
+      data: {
         'budget_id': budgetId,
-        'expense_desc': expenseDescription,
-        'expense_amt': expenseAmount,
-        'status': 'Pending',
-        'created_by': _currentUserId,
-        'company_id': companyId,
-        'created_at': FieldValue.serverTimestamp(),
-      };
-
-      // Add receipt if provided
-      if (receiptBase64 != null) {
-        expenseData['receipt_image'] = receiptBase64;
-        expenseData['has_receipt'] = true;
-      } else {
-        expenseData['has_receipt'] = false;
-      }
-
-      await _firestore.collection('expenses').doc(expenseId).set(expenseData);
-
-      // Log activity
-      await _logActivity(
-        'New expense created: $expenseDescription - \$${expenseAmount.toStringAsFixed(2)}',
-        'Expense Management',
-        companyId,
-      );
-
-      return true;
-    } catch (e) {
-      print('Error creating expense: $e');
-      return false;
-    }
+        'expense_amount': expenseAmount,
+        'operation': 'create_expense',
+      },
+    );
   }
 
   // Get expenses for a budget
   Future<List<Map<String, dynamic>>> getExpensesForBudget(
     String budgetId,
   ) async {
-    try {
-      final snapshot =
-          await _firestore
-              .collection('expenses')
-              .where('budget_id', isEqualTo: budgetId)
-              .get();
+    return await _logger.timeOperation(
+      'Get Expenses for Budget',
+      () async {
+        try {
+          await _logger.debug(
+            'Getting expenses for budget',
+            category: LogCategory.expenseManagement,
+            data: {'budget_id': budgetId},
+          );
 
-      // Sort in dart instead of using orderBy
-      final docs = snapshot.docs;
-      docs.sort((a, b) {
-        final aTime = a.data()['created_at'] as Timestamp?;
-        final bTime = b.data()['created_at'] as Timestamp?;
-        if (aTime == null || bTime == null) return 0;
-        return bTime.compareTo(aTime);
-      });
+          final snapshot =
+              await _firestore
+                  .collection('expenses')
+                  .where('budget_id', isEqualTo: budgetId)
+                  .get();
 
-      List<Map<String, dynamic>> expenses = [];
-      for (var doc in docs) {
-        final data = doc.data();
+          await _logger.debug(
+            'Expense query completed',
+            category: LogCategory.expenseManagement,
+            data: {
+              'budget_id': budgetId,
+              'expenses_found': snapshot.docs.length,
+            },
+          );
 
-        // Get creator information
-        if (data['created_by'] != null) {
-          try {
-            final creatorDoc =
-                await _firestore
-                    .collection('accounts')
-                    .doc(data['created_by'])
-                    .get();
-            if (creatorDoc.exists) {
-              final creatorData = creatorDoc.data()!;
-              data['created_by_name'] =
-                  '${creatorData['f_name']} ${creatorData['l_name']}';
-              data['created_by_email'] = creatorData['email'];
+          // Sort in dart instead of using orderBy
+          final docs = snapshot.docs;
+          docs.sort((a, b) {
+            final aTime = a.data()['created_at'] as Timestamp?;
+            final bTime = b.data()['created_at'] as Timestamp?;
+            if (aTime == null || bTime == null) return 0;
+            return bTime.compareTo(aTime);
+          });
+
+          List<Map<String, dynamic>> expenses = [];
+          int processedCount = 0;
+          int errorCount = 0;
+
+          for (var doc in docs) {
+            try {
+              final data = doc.data();
+
+              // Get creator information
+              if (data['created_by'] != null) {
+                try {
+                  final creatorDoc =
+                      await _firestore
+                          .collection('accounts')
+                          .doc(data['created_by'])
+                          .get();
+                  if (creatorDoc.exists) {
+                    final creatorData = creatorDoc.data()!;
+                    data['created_by_name'] =
+                        '${creatorData['f_name']} ${creatorData['l_name']}';
+                    data['created_by_email'] = creatorData['email'];
+                  } else {
+                    await _logger.warning(
+                      'Creator document not found for expense',
+                      category: LogCategory.expenseManagement,
+                      data: {
+                        'expense_id': data['expense_id'],
+                        'created_by': data['created_by'],
+                      },
+                    );
+                    data['created_by_name'] = 'Unknown User';
+                  }
+                } catch (e) {
+                  await _logger.error(
+                    'Error getting creator info for expense',
+                    category: LogCategory.expenseManagement,
+                    error: e,
+                    data: {
+                      'expense_id': data['expense_id'],
+                      'created_by': data['created_by'],
+                    },
+                  );
+                  data['created_by_name'] = 'Unknown User';
+                }
+              }
+
+              expenses.add(data);
+              processedCount++;
+            } catch (e) {
+              errorCount++;
+              await _logger.error(
+                'Error processing expense document',
+                category: LogCategory.expenseManagement,
+                error: e,
+                data: {'document_id': doc.id, 'budget_id': budgetId},
+              );
             }
-          } catch (e) {
-            print('Error getting creator info for expense: $e');
-            data['created_by_name'] = 'Unknown User';
           }
+
+          await _logger.info(
+            'Expense retrieval completed',
+            category: LogCategory.expenseManagement,
+            data: {
+              'budget_id': budgetId,
+              'total_expenses': snapshot.docs.length,
+              'processed_successfully': processedCount,
+              'errors': errorCount,
+            },
+          );
+
+          return expenses;
+        } catch (e) {
+          await _logger.error(
+            'Failed to get expenses for budget',
+            category: LogCategory.expenseManagement,
+            error: e,
+            data: {'budget_id': budgetId},
+          );
+          return [];
         }
-
-        expenses.add(data);
-      }
-
-      return expenses;
-    } catch (e) {
-      print('Error getting expenses for budget: $e');
-      return [];
-    }
+      },
+      data: {'budget_id': budgetId, 'operation': 'get_expenses_for_budget'},
+    );
   }
 
   // Update expense status (Budget Manager only)
@@ -579,237 +1201,526 @@ class FirebaseBudgetService {
     String newStatus, {
     String? notes,
   }) async {
-    try {
-      if (_currentUserId == null) return false;
+    return await _logger.timeOperation(
+      'Update Expense Status',
+      () async {
+        try {
+          if (_currentUserId == null) {
+            await _logger.error(
+              'Expense status update failed - no current user ID',
+              category: LogCategory.expenseManagement,
+              data: {'expense_id': expenseId, 'new_status': newStatus},
+            );
+            return false;
+          }
 
-      // Verify user is Budget Manager or Admin
-      final userDoc =
-          await _firestore.collection('accounts').doc(_currentUserId).get();
-      if (!userDoc.exists) return false;
+          await _logger.debug(
+            'Starting expense status update',
+            category: LogCategory.expenseManagement,
+            data: {
+              'expense_id': expenseId,
+              'new_status': newStatus,
+              'has_notes': notes != null,
+              'user_id': _currentUserId,
+            },
+          );
 
-      final userRole = userDoc.data()!['role'];
-      if (userRole != 'Budget Manager' && userRole != 'Administrator') {
-        throw 'Only Budget Managers and Administrators can update expense status';
-      }
+          // Verify user is Budget Manager or Admin
+          final userDoc =
+              await _firestore.collection('accounts').doc(_currentUserId).get();
+          if (!userDoc.exists) {
+            await _logger.error(
+              'Expense status update failed - user document not found',
+              category: LogCategory.expenseManagement,
+              data: {'user_id': _currentUserId, 'expense_id': expenseId},
+            );
+            return false;
+          }
 
-      Map<String, dynamic> updateData = {
-        'status': newStatus,
-        'updated_at': FieldValue.serverTimestamp(),
-        'updated_by': _currentUserId,
-      };
+          final userRole = userDoc.data()!['role'];
+          if (userRole != 'Budget Manager') {
+            await _logger.logSecurity(
+              'Unauthorized expense status update attempt',
+              level: LogLevel.warning,
+              data: {
+                'user_id': _currentUserId,
+                'user_role': userRole,
+                'expense_id': expenseId,
+                'attempted_status': newStatus,
+              },
+            );
+            throw 'Only Budget Managers can update expense status';
+          }
 
-      if (notes != null) {
-        updateData['notes'] = notes;
-      }
+          await _logger.debug(
+            'User authorization verified for expense status update',
+            category: LogCategory.expenseManagement,
+            data: {'user_role': userRole, 'expense_id': expenseId},
+          );
 
-      await _firestore.collection('expenses').doc(expenseId).update(updateData);
+          Map<String, dynamic> updateData = {
+            'status': newStatus,
+            'updated_at': FieldValue.serverTimestamp(),
+            'updated_by': _currentUserId,
+          };
 
-      // Get expense details for logging
-      final expenseDoc =
-          await _firestore.collection('expenses').doc(expenseId).get();
-      if (expenseDoc.exists) {
-        final expenseData = expenseDoc.data()!;
-        await _logActivity(
-          'Expense status updated to $newStatus: ${expenseData['expense_desc']}',
-          'Expense Management',
-          expenseData['company_id'],
-        );
-      }
+          if (notes != null) {
+            updateData['notes'] = notes;
+          }
 
-      return true;
-    } catch (e) {
-      print('Error updating expense status: $e');
-      return false;
-    }
+          await _firestore
+              .collection('expenses')
+              .doc(expenseId)
+              .update(updateData);
+
+          // Get expense details for logging
+          final expenseDoc =
+              await _firestore.collection('expenses').doc(expenseId).get();
+          if (expenseDoc.exists) {
+            final expenseData = expenseDoc.data()!;
+
+            await _logger.logExpenseManagement(
+              'Expense status updated',
+              expenseId: expenseId,
+              description: expenseData['expense_desc'],
+              amount: expenseData['expense_amt'],
+              data: {
+                'old_status': expenseData['status'],
+                'new_status': newStatus,
+                'updated_by': _currentUserId,
+                'has_notes': notes != null,
+                'budget_id': expenseData['budget_id'],
+                'company_id': expenseData['company_id'],
+              },
+            );
+          } else {
+            await _logger.warning(
+              'Expense document not found after status update',
+              category: LogCategory.expenseManagement,
+              data: {'expense_id': expenseId, 'new_status': newStatus},
+            );
+          }
+
+          return true;
+        } catch (e) {
+          await _logger.error(
+            'Expense status update failed with exception',
+            category: LogCategory.expenseManagement,
+            error: e,
+            data: {
+              'expense_id': expenseId,
+              'attempted_status': newStatus,
+              'user_id': _currentUserId,
+            },
+          );
+          return false;
+        }
+      },
+      data: {
+        'expense_id': expenseId,
+        'new_status': newStatus,
+        'operation': 'update_expense_status',
+      },
+    );
   }
 
   // Mark expense as fraudulent (Budget Manager only)
   Future<bool> markExpenseAsFraudulent(String expenseId, String reason) async {
-    try {
-      return await updateExpenseStatus(expenseId, 'Fraudulent', notes: reason);
-    } catch (e) {
-      print('Error marking expense as fraudulent: $e');
-      return false;
-    }
+    await _logger.logSecurity(
+      'Expense marked as fraudulent',
+      level: LogLevel.critical,
+      data: {
+        'expense_id': expenseId,
+        'reason': reason,
+        'marked_by': _currentUserId,
+      },
+    );
+
+    return await updateExpenseStatus(expenseId, 'Fraudulent', notes: reason);
   }
 
   // Get available authorized spenders for current user's company
   Future<List<Map<String, dynamic>>> getAvailableAuthorizedSpenders() async {
-    try {
-      if (_currentUserId == null) return [];
+    return await _logger.timeOperation(
+      'Get Available Authorized Spenders',
+      () async {
+        try {
+          if (_currentUserId == null) {
+            await _logger.error(
+              'Cannot get authorized spenders - no current user ID',
+              category: LogCategory.budgetManagement,
+            );
+            return [];
+          }
 
-      // Get current user's company
-      final userDoc =
-          await _firestore.collection('accounts').doc(_currentUserId).get();
-      if (!userDoc.exists) return [];
+          await _logger.debug(
+            'Getting available authorized spenders',
+            category: LogCategory.budgetManagement,
+            data: {'user_id': _currentUserId},
+          );
 
-      final companyId = userDoc.data()!['company_id'];
+          // Get current user's company
+          final userDoc =
+              await _firestore.collection('accounts').doc(_currentUserId).get();
+          if (!userDoc.exists) {
+            await _logger.error(
+              'Cannot get authorized spenders - user document not found',
+              category: LogCategory.budgetManagement,
+              data: {'user_id': _currentUserId},
+            );
+            return [];
+          }
 
-      // Get all authorized spenders in the company
-      final snapshot =
-          await _firestore
-              .collection('accounts')
-              .where('company_id', isEqualTo: companyId)
-              .where('role', isEqualTo: 'Authorized Spender')
-              .where('status', isEqualTo: 'Active')
-              .get();
+          final companyId = userDoc.data()!['company_id'];
 
-      return snapshot.docs.map((doc) {
-        final data = doc.data();
-        return {
-          'account_id': data['account_id'],
-          'name': '${data['f_name']} ${data['l_name']}',
-          'email': data['email'],
-          'contact_number': data['contact_number'] ?? '',
-        };
-      }).toList();
-    } catch (e) {
-      print('Error getting authorized spenders: $e');
-      return [];
-    }
+          await _logger.debug(
+            'Querying authorized spenders for company',
+            category: LogCategory.budgetManagement,
+            data: {'company_id': companyId},
+          );
+
+          // Get all authorized spenders in the company
+          final snapshot =
+              await _firestore
+                  .collection('accounts')
+                  .where('company_id', isEqualTo: companyId)
+                  .where('role', isEqualTo: 'Authorized Spender')
+                  .where('status', isEqualTo: 'Active')
+                  .get();
+
+          final spenders =
+              snapshot.docs.map((doc) {
+                final data = doc.data();
+                return {
+                  'account_id': data['account_id'],
+                  'name': '${data['f_name']} ${data['l_name']}',
+                  'email': data['email'],
+                  'contact_number': data['contact_number'] ?? '',
+                };
+              }).toList();
+
+          await _logger.info(
+            'Retrieved available authorized spenders',
+            category: LogCategory.budgetManagement,
+            data: {'company_id': companyId, 'spenders_found': spenders.length},
+          );
+
+          return spenders;
+        } catch (e) {
+          await _logger.error(
+            'Failed to get available authorized spenders',
+            category: LogCategory.budgetManagement,
+            error: e,
+            data: {'user_id': _currentUserId},
+          );
+          return [];
+        }
+      },
+      data: {'operation': 'get_available_authorized_spenders'},
+    );
   }
 
   // Get budget details by ID
   Future<Map<String, dynamic>?> getBudgetById(String budgetId) async {
-    try {
-      final doc = await _firestore.collection('budgets').doc(budgetId).get();
-      if (!doc.exists) return null;
+    return await _logger.timeOperation(
+      'Get Budget by ID',
+      () async {
+        try {
+          await _logger.debug(
+            'Getting budget by ID',
+            category: LogCategory.budgetManagement,
+            data: {'budget_id': budgetId},
+          );
 
-      return await _processBudgetDoc(doc);
-    } catch (e) {
-      print('Error getting budget by ID: $e');
-      return null;
-    }
+          final doc =
+              await _firestore.collection('budgets').doc(budgetId).get();
+          if (!doc.exists) {
+            await _logger.warning(
+              'Budget not found by ID',
+              category: LogCategory.budgetManagement,
+              data: {'budget_id': budgetId},
+            );
+            return null;
+          }
+
+          final budget = await _processBudgetDoc(doc);
+
+          await _logger.info(
+            'Budget retrieved successfully by ID',
+            category: LogCategory.budgetManagement,
+            data: {
+              'budget_id': budgetId,
+              'budget_name': budget['budget_name'],
+              'status': budget['status'],
+            },
+          );
+
+          return budget;
+        } catch (e) {
+          await _logger.error(
+            'Failed to get budget by ID',
+            category: LogCategory.budgetManagement,
+            error: e,
+            data: {'budget_id': budgetId},
+          );
+          return null;
+        }
+      },
+      data: {'budget_id': budgetId, 'operation': 'get_budget_by_id'},
+    );
   }
 
   // Get expense details by ID
   Future<Map<String, dynamic>?> getExpenseById(String expenseId) async {
-    try {
-      final doc = await _firestore.collection('expenses').doc(expenseId).get();
-      if (!doc.exists) return null;
-
-      final data = doc.data()!;
-
-      // Get creator information
-      if (data['created_by'] != null) {
+    return await _logger.timeOperation(
+      'Get Expense by ID',
+      () async {
         try {
-          final creatorDoc =
-              await _firestore
-                  .collection('accounts')
-                  .doc(data['created_by'])
-                  .get();
-          if (creatorDoc.exists) {
-            final creatorData = creatorDoc.data()!;
-            data['created_by_name'] =
-                '${creatorData['f_name']} ${creatorData['l_name']}';
-            data['created_by_email'] = creatorData['email'];
+          await _logger.debug(
+            'Getting expense by ID',
+            category: LogCategory.expenseManagement,
+            data: {'expense_id': expenseId},
+          );
+
+          final doc =
+              await _firestore.collection('expenses').doc(expenseId).get();
+          if (!doc.exists) {
+            await _logger.warning(
+              'Expense not found by ID',
+              category: LogCategory.expenseManagement,
+              data: {'expense_id': expenseId},
+            );
+            return null;
           }
-        } catch (e) {
-          print('Error getting creator info: $e');
-          data['created_by_name'] = 'Unknown User';
-        }
-      }
 
-      // Get budget information
-      if (data['budget_id'] != null) {
-        try {
-          final budgetDoc =
-              await _firestore
-                  .collection('budgets')
-                  .doc(data['budget_id'])
-                  .get();
-          if (budgetDoc.exists) {
-            final budgetData = budgetDoc.data()!;
-            data['budget_name'] = budgetData['budget_name'];
+          final data = doc.data()!;
+
+          // Get creator information
+          if (data['created_by'] != null) {
+            try {
+              final creatorDoc =
+                  await _firestore
+                      .collection('accounts')
+                      .doc(data['created_by'])
+                      .get();
+              if (creatorDoc.exists) {
+                final creatorData = creatorDoc.data()!;
+                data['created_by_name'] =
+                    '${creatorData['f_name']} ${creatorData['l_name']}';
+                data['created_by_email'] = creatorData['email'];
+              } else {
+                data['created_by_name'] = 'Unknown User';
+                await _logger.warning(
+                  'Creator not found for expense',
+                  category: LogCategory.expenseManagement,
+                  data: {
+                    'expense_id': expenseId,
+                    'created_by': data['created_by'],
+                  },
+                );
+              }
+            } catch (e) {
+              await _logger.error(
+                'Error getting creator info for expense',
+                category: LogCategory.expenseManagement,
+                error: e,
+                data: {
+                  'expense_id': expenseId,
+                  'created_by': data['created_by'],
+                },
+              );
+              data['created_by_name'] = 'Unknown User';
+            }
           }
+
+          // Get budget information
+          if (data['budget_id'] != null) {
+            try {
+              final budgetDoc =
+                  await _firestore
+                      .collection('budgets')
+                      .doc(data['budget_id'])
+                      .get();
+              if (budgetDoc.exists) {
+                final budgetData = budgetDoc.data()!;
+                data['budget_name'] = budgetData['budget_name'];
+              } else {
+                await _logger.warning(
+                  'Budget not found for expense',
+                  category: LogCategory.expenseManagement,
+                  data: {
+                    'expense_id': expenseId,
+                    'budget_id': data['budget_id'],
+                  },
+                );
+              }
+            } catch (e) {
+              await _logger.error(
+                'Error getting budget info for expense',
+                category: LogCategory.expenseManagement,
+                error: e,
+                data: {'expense_id': expenseId, 'budget_id': data['budget_id']},
+              );
+            }
+          }
+
+          await _logger.info(
+            'Expense retrieved successfully by ID',
+            category: LogCategory.expenseManagement,
+            data: {
+              'expense_id': expenseId,
+              'expense_description': data['expense_desc'],
+              'amount': data['expense_amt'],
+              'status': data['status'],
+            },
+          );
+
+          return data;
         } catch (e) {
-          print('Error getting budget info: $e');
+          await _logger.error(
+            'Failed to get expense by ID',
+            category: LogCategory.expenseManagement,
+            error: e,
+            data: {'expense_id': expenseId},
+          );
+          return null;
         }
-      }
-
-      return data;
-    } catch (e) {
-      print('Error getting expense by ID: $e');
-      return null;
-    }
-  }
-
-  // Private helper method to log activities
-  Future<void> _logActivity(
-    String description,
-    String type,
-    String companyId,
-  ) async {
-    try {
-      await _firestore.collection('logs').add({
-        'log_id': UuidGenerator.generateUuid(),
-        'log_desc': description,
-        'type': type,
-        'company_id': companyId,
-        'user_id': _currentUserId,
-        'created_at': FieldValue.serverTimestamp(),
-      });
-    } catch (e) {
-      print('Error logging activity: $e');
-    }
+      },
+      data: {'expense_id': expenseId, 'operation': 'get_expense_by_id'},
+    );
   }
 
   // Get pending approvals count for Budget Manager dashboard
   Future<int> getPendingApprovalsCount() async {
-    try {
-      if (_currentUserId == null) return 0;
+    return await _logger.timeOperation(
+      'Get Pending Approvals Count',
+      () async {
+        try {
+          if (_currentUserId == null) {
+            await _logger.error(
+              'Cannot get pending approvals - no current user ID',
+              category: LogCategory.budgetManagement,
+            );
+            return 0;
+          }
 
-      final userDoc =
-          await _firestore.collection('accounts').doc(_currentUserId).get();
-      if (!userDoc.exists) return 0;
+          await _logger.debug(
+            'Getting pending approvals count',
+            category: LogCategory.budgetManagement,
+            data: {'user_id': _currentUserId},
+          );
 
-      final companyId = userDoc.data()!['company_id'];
+          final userDoc =
+              await _firestore.collection('accounts').doc(_currentUserId).get();
+          if (!userDoc.exists) {
+            await _logger.error(
+              'Cannot get pending approvals - user document not found',
+              category: LogCategory.budgetManagement,
+              data: {'user_id': _currentUserId},
+            );
+            return 0;
+          }
 
-      // Count pending budgets
-      final budgetsSnapshot =
-          await _firestore
-              .collection('budgets')
-              .where('company_id', isEqualTo: companyId)
-              .where('status', isEqualTo: STATUS_PENDING)
-              .get();
+          final companyId = userDoc.data()!['company_id'];
 
-      // Count pending expenses
-      final expensesSnapshot =
-          await _firestore
-              .collection('expenses')
-              .where('company_id', isEqualTo: companyId)
-              .where('status', isEqualTo: 'Pending')
-              .get();
+          // Count pending budgets
+          final budgetsSnapshot =
+              await _firestore
+                  .collection('budgets')
+                  .where('company_id', isEqualTo: companyId)
+                  .where('status', isEqualTo: STATUS_PENDING)
+                  .get();
 
-      return budgetsSnapshot.docs.length + expensesSnapshot.docs.length;
-    } catch (e) {
-      print('Error getting pending approvals count: $e');
-      return 0;
-    }
+          // Count pending expenses
+          final expensesSnapshot =
+              await _firestore
+                  .collection('expenses')
+                  .where('company_id', isEqualTo: companyId)
+                  .where('status', isEqualTo: 'Pending')
+                  .get();
+
+          final totalPending =
+              budgetsSnapshot.docs.length + expensesSnapshot.docs.length;
+
+          await _logger.info(
+            'Retrieved pending approvals count',
+            category: LogCategory.budgetManagement,
+            data: {
+              'company_id': companyId,
+              'pending_budgets': budgetsSnapshot.docs.length,
+              'pending_expenses': expensesSnapshot.docs.length,
+              'total_pending': totalPending,
+            },
+          );
+
+          return totalPending;
+        } catch (e) {
+          await _logger.error(
+            'Failed to get pending approvals count',
+            category: LogCategory.budgetManagement,
+            error: e,
+            data: {'user_id': _currentUserId},
+          );
+          return 0;
+        }
+      },
+      data: {'operation': 'get_pending_approvals_count'},
+    );
   }
 
   // Test method to check if we can connect to Firestore and get budgets
   Future<List<Map<String, dynamic>>> testGetBudgets() async {
-    try {
-      print('Testing Firestore connection...');
-
-      // Get all budgets without any filtering
-      final snapshot = await _firestore.collection('budgets').get();
-      print('Total budgets in collection: ${snapshot.docs.length}');
-
-      List<Map<String, dynamic>> budgets = [];
-      for (var doc in snapshot.docs) {
-        final data = doc.data();
-        print(
-          'Budget: ${data['budget_name']} - Status: ${data['status']} - Company: ${data['company_id']}',
+    return await _logger.timeOperation('Test Get Budgets', () async {
+      try {
+        await _logger.info(
+          'Starting Firestore connection test',
+          category: LogCategory.system,
         );
-        budgets.add(data);
-      }
 
-      return budgets;
-    } catch (e) {
-      print('Error in test method: $e');
-      return [];
-    }
+        // Get all budgets without any filtering
+        final snapshot = await _firestore.collection('budgets').get();
+
+        await _logger.info(
+          'Firestore connection test successful',
+          category: LogCategory.system,
+          data: {'total_budgets_in_collection': snapshot.docs.length},
+        );
+
+        List<Map<String, dynamic>> budgets = [];
+        for (var doc in snapshot.docs) {
+          final data = doc.data();
+
+          await _logger.debug(
+            'Test - Processing budget document',
+            category: LogCategory.budgetManagement,
+            data: {
+              'budget_name': data['budget_name'],
+              'status': data['status'],
+              'company_id': data['company_id'],
+            },
+          );
+
+          budgets.add(data);
+        }
+
+        await _logger.info(
+          'Firestore test completed successfully',
+          category: LogCategory.system,
+          data: {
+            'budgets_processed': budgets.length,
+            'connection_status': 'successful',
+          },
+        );
+
+        return budgets;
+      } catch (e) {
+        await _logger.error(
+          'Firestore connection test failed',
+          category: LogCategory.system,
+          error: e,
+        );
+        return [];
+      }
+    }, data: {'operation': 'test_firestore_connection'});
   }
 }
