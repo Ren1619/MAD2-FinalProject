@@ -1,5 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../../services/firebase_auth_service.dart';
 import '../../services/firebase_budget_service.dart';
@@ -8,6 +9,7 @@ import '../../theme.dart';
 import 'budget_details_page.dart';
 import 'create_budget_page.dart';
 import 'dart:math' as math;
+import 'dart:async';
 
 class BudgetsPage extends StatefulWidget {
   final VoidCallback? onOpenDrawer;
@@ -20,16 +22,23 @@ class BudgetsPage extends StatefulWidget {
 
 class _BudgetsPageState extends State<BudgetsPage>
     with TickerProviderStateMixin, AutomaticKeepAliveClientMixin {
-  // Controllers with proper disposal tracking
+  // Controllers
   late TabController _tabController;
   late ScrollController _scrollController;
+  late AnimationController _fabAnimationController;
+  late AnimationController _refreshAnimationController;
+  late Animation<double> _fabScaleAnimation;
 
   // State variables
   Map<String, dynamic>? _userData;
-  bool _isLoading = true;
+  bool _isInitialLoading = true;
   bool _isRefreshing = false;
   bool _showFloatingHeader = false;
   bool _isDisposed = false;
+
+  // Cache timestamp
+  DateTime? _lastRefreshTime;
+  static const Duration _cacheValidity = Duration(minutes: 5);
 
   // Budget lists by status
   Map<String, List<Map<String, dynamic>>> _budgetsByStatus = {
@@ -39,6 +48,11 @@ class _BudgetsPageState extends State<BudgetsPage>
     'For Revision': [],
   };
 
+  // Search and filter state
+  String _searchQuery = '';
+  Timer? _searchDebouncer;
+  Map<String, List<Map<String, dynamic>>> _filteredBudgets = {};
+
   @override
   bool get wantKeepAlive => true;
 
@@ -46,20 +60,43 @@ class _BudgetsPageState extends State<BudgetsPage>
   void initState() {
     super.initState();
     _initializeControllers();
-    _loadUserData();
+    _loadInitialData();
   }
 
   void _initializeControllers() {
     _tabController = TabController(length: 4, vsync: this);
     _scrollController = ScrollController();
     _scrollController.addListener(_scrollListener);
+
+    // FAB animation controller
+    _fabAnimationController = AnimationController(
+      duration: const Duration(milliseconds: 300),
+      vsync: this,
+    );
+
+    _fabScaleAnimation = CurvedAnimation(
+      parent: _fabAnimationController,
+      curve: Curves.elasticOut,
+    );
+
+    // Refresh animation controller
+    _refreshAnimationController = AnimationController(
+      duration: const Duration(seconds: 1),
+      vsync: this,
+    );
+
+    // Show FAB after a delay
+    Future.delayed(const Duration(milliseconds: 500), () {
+      if (!_isDisposed && mounted) {
+        _fabAnimationController.forward();
+      }
+    });
   }
 
   void _scrollListener() {
     if (_isDisposed || !mounted) return;
 
     try {
-      // Show the floating header when scrolling past a certain point
       final showHeader =
           _scrollController.hasClients && _scrollController.offset > 200;
       if (showHeader != _showFloatingHeader) {
@@ -70,7 +107,6 @@ class _BudgetsPageState extends State<BudgetsPage>
         }
       }
     } catch (e) {
-      // Ignore scroll listener errors
       debugPrint('Scroll listener error: $e');
     }
   }
@@ -78,10 +114,32 @@ class _BudgetsPageState extends State<BudgetsPage>
   @override
   void dispose() {
     _isDisposed = true;
+    _searchDebouncer?.cancel();
     _tabController.dispose();
     _scrollController.removeListener(_scrollListener);
     _scrollController.dispose();
+    _fabAnimationController.dispose();
+    _refreshAnimationController.dispose();
     super.dispose();
+  }
+
+  Future<void> _loadInitialData() async {
+    if (_isDisposed || !mounted) return;
+
+    // Check if we have cached data
+    if (_lastRefreshTime != null &&
+        DateTime.now().difference(_lastRefreshTime!) < _cacheValidity &&
+        _budgetsByStatus['Active']!.isNotEmpty) {
+      setState(() => _isInitialLoading = false);
+      return;
+    }
+
+    await _loadUserData();
+    await _loadBudgets();
+
+    if (!mounted || _isDisposed) return;
+
+    setState(() => _isInitialLoading = false);
   }
 
   Future<void> _loadUserData() async {
@@ -99,15 +157,8 @@ class _BudgetsPageState extends State<BudgetsPage>
       setState(() {
         _userData = userData;
       });
-
-      await _loadBudgets();
-
-      if (!mounted || _isDisposed) return;
-
-      setState(() => _isLoading = false);
     } catch (e) {
       if (mounted && !_isDisposed) {
-        setState(() => _isLoading = false);
         _showErrorSnackBar('Error loading user data: $e');
       }
     }
@@ -118,7 +169,7 @@ class _BudgetsPageState extends State<BudgetsPage>
 
     try {
       if (!_isRefreshing) {
-        setState(() => _isLoading = true);
+        setState(() => _isInitialLoading = true);
       }
 
       // Direct Firestore access with timeout
@@ -171,13 +222,15 @@ class _BudgetsPageState extends State<BudgetsPage>
 
       setState(() {
         _budgetsByStatus = budgetsByStatus;
-        _isLoading = false;
+        _filteredBudgets = Map.from(budgetsByStatus);
+        _isInitialLoading = false;
         _isRefreshing = false;
+        _lastRefreshTime = DateTime.now();
       });
     } catch (e) {
       if (mounted && !_isDisposed) {
         setState(() {
-          _isLoading = false;
+          _isInitialLoading = false;
           _isRefreshing = false;
         });
         _showErrorSnackBar('Error loading budgets: $e');
@@ -186,15 +239,56 @@ class _BudgetsPageState extends State<BudgetsPage>
   }
 
   Future<void> _refreshBudgets() async {
-    if (_isDisposed || !mounted) return;
+    if (_isDisposed || !mounted || _isRefreshing) return;
 
     setState(() => _isRefreshing = true);
+
+    // Start refresh animation
+    _refreshAnimationController.repeat();
+
+    // Haptic feedback
+    HapticFeedback.mediumImpact();
+
     await _loadBudgets();
 
-    // Show feedback to user
+    // Stop animation
+    _refreshAnimationController.stop();
+    _refreshAnimationController.reset();
+
     if (mounted && !_isDisposed) {
       _showSuccessSnackBar('Budget list updated');
     }
+  }
+
+  void _filterBudgets(String query) {
+    _searchDebouncer?.cancel();
+    _searchDebouncer = Timer(const Duration(milliseconds: 300), () {
+      if (!mounted || _isDisposed) return;
+
+      setState(() {
+        _searchQuery = query.toLowerCase();
+
+        if (_searchQuery.isEmpty) {
+          _filteredBudgets = Map.from(_budgetsByStatus);
+        } else {
+          _filteredBudgets = {};
+          _budgetsByStatus.forEach((status, budgets) {
+            _filteredBudgets[status] =
+                budgets.where((budget) {
+                  final name = (budget['budget_name'] ?? '').toLowerCase();
+                  final description =
+                      (budget['budget_description'] ?? '').toLowerCase();
+                  final creatorName =
+                      (budget['created_by_name'] ?? '').toLowerCase();
+
+                  return name.contains(_searchQuery) ||
+                      description.contains(_searchQuery) ||
+                      creatorName.contains(_searchQuery);
+                }).toList();
+          });
+        }
+      });
+    });
   }
 
   void _showCreateBudgetPage() {
@@ -202,21 +296,32 @@ class _BudgetsPageState extends State<BudgetsPage>
 
     Navigator.push(
       context,
-      MaterialPageRoute(builder: (context) => const CreateBudgetPage()),
+      PageRouteBuilder(
+        pageBuilder:
+            (context, animation, secondaryAnimation) =>
+                const CreateBudgetPage(),
+        transitionsBuilder: (context, animation, secondaryAnimation, child) {
+          return SlideTransition(
+            position: animation.drive(
+              Tween(
+                begin: const Offset(1.0, 0.0),
+                end: Offset.zero,
+              ).chain(CurveTween(curve: Curves.easeOutCubic)),
+            ),
+            child: child,
+          );
+        },
+      ),
     ).then((result) {
-      // Check if a budget was successfully created
       if (result == true && mounted && !_isDisposed) {
-        // Set refreshing state before loading
         setState(() => _isRefreshing = true);
 
-        // Add a delay to ensure Firestore has propagated the changes
         Future.delayed(const Duration(milliseconds: 800), () {
           if (mounted && !_isDisposed) {
             _loadBudgets().then((_) {
               if (mounted && !_isDisposed) {
-                // Switch to the "Pending for Approval" tab to show the new budget
                 _tabController.animateTo(0);
-                _showSuccessSnackBar('Budget created and list refreshed');
+                _showSuccessSnackBar('Budget created successfully');
               }
             });
           }
@@ -230,11 +335,15 @@ class _BudgetsPageState extends State<BudgetsPage>
 
     Navigator.push(
       context,
-      MaterialPageRoute(
-        builder: (context) => BudgetDetailsPage(budget: budget),
+      PageRouteBuilder(
+        pageBuilder:
+            (context, animation, secondaryAnimation) =>
+                BudgetDetailsPage(budget: budget),
+        transitionsBuilder: (context, animation, secondaryAnimation, child) {
+          return FadeTransition(opacity: animation, child: child);
+        },
       ),
     ).then((_) {
-      // Only reload if we're still mounted and not disposed
       if (mounted && !_isDisposed) {
         _loadBudgets();
       }
@@ -243,6 +352,19 @@ class _BudgetsPageState extends State<BudgetsPage>
 
   Future<void> _approveBudget(Map<String, dynamic> budget) async {
     if (_isDisposed || !mounted) return;
+
+    // Optimistic update
+    setState(() {
+      _budgetsByStatus['Pending for Approval']!.remove(budget);
+      _budgetsByStatus['Active']!.insert(0, {
+        ...budget,
+        'status': 'Active',
+        'updated_at': DateTime.now(),
+      });
+      _filteredBudgets = Map.from(_budgetsByStatus);
+    });
+
+    HapticFeedback.lightImpact();
 
     try {
       final budgetService = Provider.of<FirebaseBudgetService>(
@@ -257,13 +379,28 @@ class _BudgetsPageState extends State<BudgetsPage>
       if (mounted && !_isDisposed) {
         if (success) {
           _showSuccessSnackBar('Budget approved successfully');
-          _loadBudgets();
         } else {
+          // Revert optimistic update
+          setState(() {
+            _budgetsByStatus['Active']!.removeWhere(
+              (b) => b['budget_id'] == budget['budget_id'],
+            );
+            _budgetsByStatus['Pending for Approval']!.insert(0, budget);
+            _filteredBudgets = Map.from(_budgetsByStatus);
+          });
           _showErrorSnackBar('Failed to approve budget');
         }
       }
     } catch (e) {
       if (mounted && !_isDisposed) {
+        // Revert optimistic update
+        setState(() {
+          _budgetsByStatus['Active']!.removeWhere(
+            (b) => b['budget_id'] == budget['budget_id'],
+          );
+          _budgetsByStatus['Pending for Approval']!.insert(0, budget);
+          _filteredBudgets = Map.from(_budgetsByStatus);
+        });
         _showErrorSnackBar('Error approving budget: $e');
       }
     }
@@ -359,26 +496,24 @@ class _BudgetsPageState extends State<BudgetsPage>
 
   @override
   Widget build(BuildContext context) {
-    super.build(context); // Important for AutomaticKeepAliveClientMixin
+    super.build(context);
 
     if (_isDisposed) {
       return const Scaffold(body: Center(child: Text('Page disposed')));
     }
 
-    // Cached screen dimensions for responsive layout
     final screenSize = MediaQuery.of(context).size;
     final screenWidth = screenSize.width;
 
-    // Determine layout type
     final isMobile = screenWidth < 600;
     final isTablet = screenWidth >= 600 && screenWidth < 1200;
     final isDesktop = screenWidth >= 1200;
 
-    if (_isLoading && !_isRefreshing) {
+    if (_isInitialLoading && !_isRefreshing) {
       return Scaffold(
-        body: Center(
-          child: SimpleLoadingIndicator(message: 'Loading budgets...'),
-        ),
+        backgroundColor: AppTheme.scaffoldBackground,
+        appBar: _buildAppBar(isMobile),
+        body: _buildLoadingSkeleton(isMobile, isTablet, isDesktop),
       );
     }
 
@@ -396,26 +531,34 @@ class _BudgetsPageState extends State<BudgetsPage>
       onMenuPressed: widget.onOpenDrawer,
       userData: widget.userData,
       actions: [
-        // if (!isMobile && _canCreateBudgets())
-        //   ElevatedButton.icon(
-        //     onPressed: _showCreateBudgetPage,
-        //     icon: const Icon(Icons.add, size: 18),
-        //     label: const Text('Create Budget'),
-        //     style: ElevatedButton.styleFrom(
-        //       backgroundColor: Colors.white,
-        //       foregroundColor: AppTheme.primaryColor,
-        //       elevation: 0,
-        //     ),
-        //   ),
+        if (!isMobile)
+          Container(
+            width: 200,
+            margin: const EdgeInsets.symmetric(vertical: 8, horizontal: 8),
+            child: TextField(
+              onChanged: _filterBudgets,
+              decoration: InputDecoration(
+                hintText: 'Search budgets...',
+                prefixIcon: const Icon(Icons.search, size: 20),
+                filled: true,
+                fillColor: Colors.white.withOpacity(0.2),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(30),
+                  borderSide: BorderSide.none,
+                ),
+                contentPadding: const EdgeInsets.symmetric(horizontal: 16),
+                hintStyle: TextStyle(color: Colors.white.withOpacity(0.7)),
+              ),
+              style: const TextStyle(color: Colors.white),
+            ),
+          ),
         IconButton(
-          icon: const Icon(Icons.refresh),
-          onPressed: () async {
-            setState(() => _isLoading = true);
-            await _loadBudgets();
-            if (mounted && !_isDisposed) {
-              _showSuccessSnackBar('Budget list refreshed');
-            }
-          },
+          icon: AnimatedRotation(
+            turns: _isRefreshing ? 1 : 0,
+            duration: const Duration(seconds: 1),
+            child: const Icon(Icons.refresh),
+          ),
+          onPressed: _isRefreshing ? null : _refreshBudgets,
           tooltip: 'Refresh',
         ),
         const SizedBox(width: 8),
@@ -425,51 +568,159 @@ class _BudgetsPageState extends State<BudgetsPage>
 
   Widget? _buildFloatingActionButton(bool isMobile) {
     if (isMobile && _canCreateBudgets()) {
-      return FloatingActionButton.extended(
-        onPressed: _showCreateBudgetPage,
-        backgroundColor: AppTheme.primaryColor,
-        foregroundColor: Colors.white,
-        elevation: 4,
-        icon: const Icon(Icons.add),
-        label: const Text('Create Budget'),
-        tooltip: 'Create Budget',
+      return ScaleTransition(
+        scale: _fabScaleAnimation,
+        child: FloatingActionButton.extended(
+          onPressed: _showCreateBudgetPage,
+          backgroundColor: AppTheme.primaryColor,
+          foregroundColor: Colors.white,
+          elevation: 4,
+          icon: const Icon(Icons.add),
+          label: const Text('Create Budget'),
+          tooltip: 'Create Budget',
+        ),
       );
     }
     return null;
   }
 
+  Widget _buildLoadingSkeleton(bool isMobile, bool isTablet, bool isDesktop) {
+    return Column(
+      children: [
+        // Tab bar skeleton
+        Container(
+          height: 48,
+          color: Colors.white,
+          child: Row(
+            children: List.generate(
+              4,
+              (index) => Expanded(
+                child: Container(
+                  margin: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 12,
+                  ),
+                  decoration: BoxDecoration(
+                    color: Colors.grey[300],
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+
+        // Content skeleton
+        Expanded(
+          child: Padding(
+            padding: EdgeInsets.all(isMobile ? 16 : 24),
+            child: GridView.builder(
+              gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: isDesktop ? 2 : 1,
+                childAspectRatio: isDesktop ? 1.6 : (isTablet ? 2.5 : 2),
+                crossAxisSpacing: 20,
+                mainAxisSpacing: 20,
+              ),
+              itemCount: 6,
+              itemBuilder:
+                  (context, index) => Card(
+                    elevation: 2,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    child: Padding(
+                      padding: const EdgeInsets.all(20),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Container(
+                            width: 150,
+                            height: 20,
+                            decoration: BoxDecoration(
+                              color: Colors.grey[300],
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          Container(
+                            width: double.infinity,
+                            height: 16,
+                            decoration: BoxDecoration(
+                              color: Colors.grey[200],
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                          ),
+                          const Spacer(),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Container(
+                                width: 80,
+                                height: 16,
+                                decoration: BoxDecoration(
+                                  color: Colors.grey[200],
+                                  borderRadius: BorderRadius.circular(4),
+                                ),
+                              ),
+                              Container(
+                                width: 60,
+                                height: 24,
+                                decoration: BoxDecoration(
+                                  color: Colors.grey[300],
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
   Widget _buildBody(bool isDesktop, bool isTablet, bool isMobile) {
     return Stack(
       children: [
-        // Main content with proper error boundaries
-        Builder(
-          builder: (context) {
-            try {
-              if (isDesktop) {
-                return _buildDesktopLayout();
-              } else if (isTablet) {
-                return _buildTabletLayout();
-              } else {
-                return _buildMobileLayout();
+        RefreshIndicator(
+          onRefresh: _refreshBudgets,
+          child: Builder(
+            builder: (context) {
+              try {
+                if (isDesktop) {
+                  return _buildDesktopLayout();
+                } else if (isTablet) {
+                  return _buildTabletLayout();
+                } else {
+                  return _buildMobileLayout();
+                }
+              } catch (e) {
+                return Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(
+                        Icons.error_outline,
+                        size: 64,
+                        color: Colors.red[400],
+                      ),
+                      const SizedBox(height: 16),
+                      Text('Error loading budgets: $e'),
+                      const SizedBox(height: 16),
+                      ElevatedButton(
+                        onPressed: _loadBudgets,
+                        child: const Text('Retry'),
+                      ),
+                    ],
+                  ),
+                );
               }
-            } catch (e) {
-              return Center(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(Icons.error_outline, size: 64, color: Colors.red[400]),
-                    const SizedBox(height: 16),
-                    Text('Error loading budgets: $e'),
-                    const SizedBox(height: 16),
-                    ElevatedButton(
-                      onPressed: _loadBudgets,
-                      child: const Text('Retry'),
-                    ),
-                  ],
-                ),
-              );
-            }
-          },
+            },
+          ),
         ),
 
         // Floating header for mobile and tablet when scrolled
@@ -503,6 +754,21 @@ class _BudgetsPageState extends State<BudgetsPage>
               _buildUserRoleCard(),
               const SizedBox(height: 20),
 
+              // Search field for desktop
+              TextField(
+                onChanged: _filterBudgets,
+                decoration: InputDecoration(
+                  hintText: 'Search budgets...',
+                  prefixIcon: const Icon(Icons.search),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  filled: true,
+                  fillColor: Colors.grey[50],
+                ),
+              ),
+              const SizedBox(height: 20),
+
               Text(
                 'Budget Statistics',
                 style: TextStyle(
@@ -525,7 +791,7 @@ class _BudgetsPageState extends State<BudgetsPage>
                   Icon(Icons.access_time, size: 16, color: Colors.grey[600]),
                   const SizedBox(width: 8),
                   Text(
-                    'Last refreshed: ${DateTime.now().hour}:${DateTime.now().minute.toString().padLeft(2, '0')}',
+                    'Last refreshed: ${_lastRefreshTime != null ? "${_lastRefreshTime!.hour}:${_lastRefreshTime!.minute.toString().padLeft(2, '0')}" : "Never"}',
                     style: TextStyle(fontSize: 12, color: Colors.grey[600]),
                   ),
                 ],
@@ -604,16 +870,19 @@ class _BudgetsPageState extends State<BudgetsPage>
                   tabs: [
                     Tab(
                       text:
-                          'Pending (${_budgetsByStatus['Pending for Approval']!.length})',
-                    ),
-                    Tab(text: 'Active (${_budgetsByStatus['Active']!.length})'),
-                    Tab(
-                      text:
-                          'Completed (${_budgetsByStatus['Completed']!.length})',
+                          'Pending (${_filteredBudgets['Pending for Approval']?.length ?? 0})',
                     ),
                     Tab(
                       text:
-                          'For Revision (${_budgetsByStatus['For Revision']!.length})',
+                          'Active (${_filteredBudgets['Active']?.length ?? 0})',
+                    ),
+                    Tab(
+                      text:
+                          'Completed (${_filteredBudgets['Completed']?.length ?? 0})',
+                    ),
+                    Tab(
+                      text:
+                          'For Revision (${_filteredBudgets['For Revision']?.length ?? 0})',
                     ),
                   ],
                 ),
@@ -641,28 +910,64 @@ class _BudgetsPageState extends State<BudgetsPage>
   Widget _buildDesktopStatCards() {
     return Column(
       children: [
-        _buildDesktopStatCard(
-          'Pending for Approval',
-          _budgetsByStatus['Pending for Approval']!.length,
-          Colors.orange,
+        TweenAnimationBuilder<double>(
+          tween: Tween(begin: 0, end: 1),
+          duration: const Duration(milliseconds: 600),
+          curve: Curves.easeOutCubic,
+          builder:
+              (context, value, child) => Transform.scale(
+                scale: value,
+                child: _buildDesktopStatCard(
+                  'Pending for Approval',
+                  _budgetsByStatus['Pending for Approval']!.length,
+                  Colors.orange,
+                ),
+              ),
         ),
         const SizedBox(height: 12),
-        _buildDesktopStatCard(
-          'Active',
-          _budgetsByStatus['Active']!.length,
-          Colors.green,
+        TweenAnimationBuilder<double>(
+          tween: Tween(begin: 0, end: 1),
+          duration: const Duration(milliseconds: 700),
+          curve: Curves.easeOutCubic,
+          builder:
+              (context, value, child) => Transform.scale(
+                scale: value,
+                child: _buildDesktopStatCard(
+                  'Active',
+                  _budgetsByStatus['Active']!.length,
+                  Colors.green,
+                ),
+              ),
         ),
         const SizedBox(height: 12),
-        _buildDesktopStatCard(
-          'Completed',
-          _budgetsByStatus['Completed']!.length,
-          Colors.blue,
+        TweenAnimationBuilder<double>(
+          tween: Tween(begin: 0, end: 1),
+          duration: const Duration(milliseconds: 800),
+          curve: Curves.easeOutCubic,
+          builder:
+              (context, value, child) => Transform.scale(
+                scale: value,
+                child: _buildDesktopStatCard(
+                  'Completed',
+                  _budgetsByStatus['Completed']!.length,
+                  Colors.blue,
+                ),
+              ),
         ),
         const SizedBox(height: 12),
-        _buildDesktopStatCard(
-          'For Revision',
-          _budgetsByStatus['For Revision']!.length,
-          Colors.red,
+        TweenAnimationBuilder<double>(
+          tween: Tween(begin: 0, end: 1),
+          duration: const Duration(milliseconds: 900),
+          curve: Curves.easeOutCubic,
+          builder:
+              (context, value, child) => Transform.scale(
+                scale: value,
+                child: _buildDesktopStatCard(
+                  'For Revision',
+                  _budgetsByStatus['For Revision']!.length,
+                  Colors.red,
+                ),
+              ),
         ),
       ],
     );
@@ -728,7 +1033,7 @@ class _BudgetsPageState extends State<BudgetsPage>
   }
 
   Widget _buildDesktopBudgetList(String status) {
-    final budgets = _budgetsByStatus[status]!;
+    final budgets = _filteredBudgets[status] ?? [];
 
     if (budgets.isEmpty) {
       return RefreshIndicator(
@@ -764,7 +1069,19 @@ class _BudgetsPageState extends State<BudgetsPage>
         ),
         itemCount: budgets.length,
         itemBuilder: (context, index) {
-          return _buildDesktopBudgetCard(budgets[index], status);
+          return TweenAnimationBuilder<double>(
+            tween: Tween(begin: 0, end: 1),
+            duration: Duration(milliseconds: 300 + (index * 50)),
+            curve: Curves.easeOutCubic,
+            builder:
+                (context, value, child) => Transform.scale(
+                  scale: value,
+                  child: Opacity(
+                    opacity: value,
+                    child: _buildDesktopBudgetCard(budgets[index], status),
+                  ),
+                ),
+          );
         },
       ),
     );
@@ -902,13 +1219,22 @@ class _BudgetsPageState extends State<BudgetsPage>
                     const SizedBox(height: 6),
                     ClipRRect(
                       borderRadius: BorderRadius.circular(4),
-                      child: LinearProgressIndicator(
-                        value: percentageUsed.clamp(0.0, 1.0),
-                        backgroundColor: Colors.grey[200],
-                        valueColor: AlwaysStoppedAnimation<Color>(
-                          progressColor,
+                      child: TweenAnimationBuilder<double>(
+                        tween: Tween(
+                          begin: 0,
+                          end: percentageUsed.clamp(0.0, 1.0),
                         ),
-                        minHeight: 8,
+                        duration: const Duration(milliseconds: 800),
+                        curve: Curves.easeOutCubic,
+                        builder:
+                            (context, value, child) => LinearProgressIndicator(
+                              value: value,
+                              backgroundColor: Colors.grey[200],
+                              valueColor: AlwaysStoppedAnimation<Color>(
+                                progressColor,
+                              ),
+                              minHeight: 8,
+                            ),
                       ),
                     ),
                   ],
@@ -1038,18 +1364,19 @@ class _BudgetsPageState extends State<BudgetsPage>
                     tabs: [
                       Tab(
                         text:
-                            'Pending (${_budgetsByStatus['Pending for Approval']!.length})',
-                      ),
-                      Tab(
-                        text: 'Active (${_budgetsByStatus['Active']!.length})',
+                            'Pending (${_filteredBudgets['Pending for Approval']?.length ?? 0})',
                       ),
                       Tab(
                         text:
-                            'Completed (${_budgetsByStatus['Completed']!.length})',
+                            'Active (${_filteredBudgets['Active']?.length ?? 0})',
                       ),
                       Tab(
                         text:
-                            'For Revision (${_budgetsByStatus['For Revision']!.length})',
+                            'Completed (${_filteredBudgets['Completed']?.length ?? 0})',
+                      ),
+                      Tab(
+                        text:
+                            'For Revision (${_filteredBudgets['For Revision']?.length ?? 0})',
                       ),
                     ],
                   ),
@@ -1079,6 +1406,26 @@ class _BudgetsPageState extends State<BudgetsPage>
         children: [
           _buildUserRoleCard(),
           const SizedBox(height: 20),
+
+          // Search field
+          TextField(
+            onChanged: _filterBudgets,
+            decoration: InputDecoration(
+              hintText: 'Search budgets...',
+              prefixIcon: const Icon(Icons.search),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(10),
+              ),
+              filled: true,
+              fillColor: Colors.grey[50],
+              contentPadding: const EdgeInsets.symmetric(
+                horizontal: 16,
+                vertical: 12,
+              ),
+            ),
+          ),
+          const SizedBox(height: 20),
+
           GridView.count(
             crossAxisCount: 2,
             mainAxisSpacing: 16,
@@ -1124,55 +1471,67 @@ class _BudgetsPageState extends State<BudgetsPage>
   }
 
   Widget _buildTabletStatCard(String title, int count, Color color) {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: color.withOpacity(0.1),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: color.withOpacity(0.3)),
-      ),
-      child: Row(
-        children: [
-          Icon(_getIconForStatus(title), color: color, size: 28),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Text(
-                  title,
-                  style: TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w500,
-                    color: AppTheme.textPrimary,
+    return TweenAnimationBuilder<double>(
+      tween: Tween(begin: 0, end: 1),
+      duration: const Duration(milliseconds: 600),
+      curve: Curves.easeOutCubic,
+      builder:
+          (context, value, child) => Transform.scale(
+            scale: value,
+            child: Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: color.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: color.withOpacity(0.3)),
+              ),
+              child: Row(
+                children: [
+                  Icon(_getIconForStatus(title), color: color, size: 28),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Text(
+                          title,
+                          style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w500,
+                            color: AppTheme.textPrimary,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          '$count budget${count != 1 ? 's' : ''}',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: AppTheme.textSecondary,
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  '$count budget${count != 1 ? 's' : ''}',
-                  style: TextStyle(fontSize: 12, color: AppTheme.textSecondary),
-                ),
-              ],
+                  Text(
+                    count.toString(),
+                    style: TextStyle(
+                      fontSize: 24,
+                      fontWeight: FontWeight.bold,
+                      color: color,
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
-          Text(
-            count.toString(),
-            style: TextStyle(
-              fontSize: 24,
-              fontWeight: FontWeight.bold,
-              color: color,
-            ),
-          ),
-        ],
-      ),
     );
   }
 
   Widget _buildTabletBudgetList(String status) {
-    final budgets = _budgetsByStatus[status]!;
+    final budgets = _filteredBudgets[status] ?? [];
 
     if (budgets.isEmpty) {
       return RefreshIndicator(
@@ -1202,7 +1561,19 @@ class _BudgetsPageState extends State<BudgetsPage>
         padding: const EdgeInsets.all(20),
         itemCount: budgets.length,
         itemBuilder: (context, index) {
-          return _buildBudgetCard(budgets[index], status, false);
+          return TweenAnimationBuilder<double>(
+            tween: Tween(begin: 0, end: 1),
+            duration: Duration(milliseconds: 300 + (index * 50)),
+            curve: Curves.easeOutCubic,
+            builder:
+                (context, value, child) => Transform.translate(
+                  offset: Offset(0, 20 * (1 - value)),
+                  child: Opacity(
+                    opacity: value,
+                    child: _buildBudgetCard(budgets[index], status, false),
+                  ),
+                ),
+          );
         },
       ),
     );
@@ -1229,18 +1600,19 @@ class _BudgetsPageState extends State<BudgetsPage>
                     tabs: [
                       Tab(
                         text:
-                            'Pending (${_budgetsByStatus['Pending for Approval']!.length})',
-                      ),
-                      Tab(
-                        text: 'Active (${_budgetsByStatus['Active']!.length})',
+                            'Pending (${_filteredBudgets['Pending for Approval']?.length ?? 0})',
                       ),
                       Tab(
                         text:
-                            'Completed (${_budgetsByStatus['Completed']!.length})',
+                            'Active (${_filteredBudgets['Active']?.length ?? 0})',
                       ),
                       Tab(
                         text:
-                            'For Revision (${_budgetsByStatus['For Revision']!.length})',
+                            'Completed (${_filteredBudgets['Completed']?.length ?? 0})',
+                      ),
+                      Tab(
+                        text:
+                            'For Revision (${_filteredBudgets['For Revision']?.length ?? 0})',
                       ),
                     ],
                   ),
@@ -1270,6 +1642,26 @@ class _BudgetsPageState extends State<BudgetsPage>
         children: [
           _buildUserRoleCard(),
           const SizedBox(height: 16),
+
+          // Search field
+          TextField(
+            onChanged: _filterBudgets,
+            decoration: InputDecoration(
+              hintText: 'Search budgets...',
+              prefixIcon: const Icon(Icons.search),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(10),
+              ),
+              filled: true,
+              fillColor: Colors.grey[50],
+              contentPadding: const EdgeInsets.symmetric(
+                horizontal: 16,
+                vertical: 12,
+              ),
+            ),
+          ),
+          const SizedBox(height: 16),
+
           SingleChildScrollView(
             scrollDirection: Axis.horizontal,
             child: Row(
@@ -1315,42 +1707,51 @@ class _BudgetsPageState extends State<BudgetsPage>
   }
 
   Widget _buildMobileStatCard(String title, int count, Color color) {
-    return Container(
-      width: 110,
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: color.withOpacity(0.1),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: color.withOpacity(0.3)),
-      ),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Text(
-            count.toString(),
-            style: TextStyle(
-              fontSize: 24,
-              fontWeight: FontWeight.bold,
-              color: color,
+    return TweenAnimationBuilder<double>(
+      tween: Tween(begin: 0, end: 1),
+      duration: const Duration(milliseconds: 600),
+      curve: Curves.easeOutCubic,
+      builder:
+          (context, value, child) => Transform.scale(
+            scale: value,
+            child: Container(
+              width: 110,
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: color.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: color.withOpacity(0.3)),
+              ),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Text(
+                    count.toString(),
+                    style: TextStyle(
+                      fontSize: 24,
+                      fontWeight: FontWeight.bold,
+                      color: color,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    title,
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: AppTheme.textSecondary,
+                      fontWeight: FontWeight.w500,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                ],
+              ),
             ),
           ),
-          const SizedBox(height: 4),
-          Text(
-            title,
-            style: TextStyle(
-              fontSize: 12,
-              color: AppTheme.textSecondary,
-              fontWeight: FontWeight.w500,
-            ),
-            textAlign: TextAlign.center,
-          ),
-        ],
-      ),
     );
   }
 
   Widget _buildMobileBudgetList(String status) {
-    final budgets = _budgetsByStatus[status]!;
+    final budgets = _filteredBudgets[status] ?? [];
 
     if (budgets.isEmpty) {
       return RefreshIndicator(
@@ -1380,7 +1781,19 @@ class _BudgetsPageState extends State<BudgetsPage>
         padding: const EdgeInsets.all(16),
         itemCount: budgets.length,
         itemBuilder: (context, index) {
-          return _buildBudgetCard(budgets[index], status, true);
+          return TweenAnimationBuilder<double>(
+            tween: Tween(begin: 0, end: 1),
+            duration: Duration(milliseconds: 300 + (index * 50)),
+            curve: Curves.easeOutCubic,
+            builder:
+                (context, value, child) => Transform.translate(
+                  offset: Offset(0, 20 * (1 - value)),
+                  child: Opacity(
+                    opacity: value,
+                    child: _buildBudgetCard(budgets[index], status, true),
+                  ),
+                ),
+          );
         },
       ),
     );
@@ -1554,11 +1967,19 @@ class _BudgetsPageState extends State<BudgetsPage>
                 ],
                 ClipRRect(
                   borderRadius: BorderRadius.circular(4),
-                  child: LinearProgressIndicator(
-                    value: percentageUsed.clamp(0.0, 1.0),
-                    backgroundColor: Colors.grey[200],
-                    valueColor: AlwaysStoppedAnimation<Color>(progressColor),
-                    minHeight: isMobile ? 6 : 8,
+                  child: TweenAnimationBuilder<double>(
+                    tween: Tween(begin: 0, end: percentageUsed.clamp(0.0, 1.0)),
+                    duration: const Duration(milliseconds: 800),
+                    curve: Curves.easeOutCubic,
+                    builder:
+                        (context, value, child) => LinearProgressIndicator(
+                          value: value,
+                          backgroundColor: Colors.grey[200],
+                          valueColor: AlwaysStoppedAnimation<Color>(
+                            progressColor,
+                          ),
+                          minHeight: isMobile ? 6 : 8,
+                        ),
                   ),
                 ),
               ],
@@ -1828,13 +2249,16 @@ class _BudgetsPageState extends State<BudgetsPage>
             tabs: [
               Tab(
                 text:
-                    'Pending (${_budgetsByStatus['Pending for Approval']!.length})',
+                    'Pending (${_filteredBudgets['Pending for Approval']?.length ?? 0})',
               ),
-              Tab(text: 'Active (${_budgetsByStatus['Active']!.length})'),
-              Tab(text: 'Completed (${_budgetsByStatus['Completed']!.length})'),
+              Tab(text: 'Active (${_filteredBudgets['Active']?.length ?? 0})'),
               Tab(
                 text:
-                    'For Revision (${_budgetsByStatus['For Revision']!.length})',
+                    'Completed (${_filteredBudgets['Completed']?.length ?? 0})',
+              ),
+              Tab(
+                text:
+                    'For Revision (${_filteredBudgets['For Revision']?.length ?? 0})',
               ),
             ],
           ),
@@ -1842,7 +2266,6 @@ class _BudgetsPageState extends State<BudgetsPage>
       ),
     );
   }
-  
 }
 
 // Enhanced status badge with proper colors and icons
@@ -1995,31 +2418,7 @@ class EmptyStateWidget extends StatelessWidget {
   }
 }
 
-// Simplified loading indicator
-class SimpleLoadingIndicator extends StatelessWidget {
-  final String message;
-
-  const SimpleLoadingIndicator({Key? key, required this.message})
-    : super(key: key);
-
-  @override
-  Widget build(BuildContext context) {
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          CircularProgressIndicator(color: AppTheme.primaryColor),
-          const SizedBox(height: 16),
-          Text(
-            message,
-            style: TextStyle(fontSize: 16, color: AppTheme.textPrimary),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
+// RevisionNotesDialog remains mostly the same
 class RevisionNotesDialog extends StatefulWidget {
   final Map<String, dynamic> budget;
   final VoidCallback onRevisionMarked;
