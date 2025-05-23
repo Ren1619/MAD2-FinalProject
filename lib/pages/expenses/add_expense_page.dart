@@ -5,8 +5,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:provider/provider.dart';
 import 'package:image_picker/image_picker.dart';
-// Conditional import for web
 import 'dart:html' as html show File, FileReader, FileUploadInputElement;
+import 'package:image/image.dart' as img;
 import '../../services/firebase_budget_service.dart';
 import '../../widgets/common_widgets.dart';
 import '../../theme.dart';
@@ -26,13 +26,17 @@ class _AddExpensePageState extends State<AddExpensePage> {
   final _descriptionController = TextEditingController();
   final _amountController = TextEditingController();
 
-  File? _receiptImage;
-  Uint8List? _receiptImageBytes; // For web
+  Uint8List? _receiptImageBytes;
   String? _receiptBase64;
   String? _receiptFileName;
   bool _isLoading = false;
   bool _isProcessingImage = false;
   ImagePicker? _picker;
+
+  // Target size constants
+  static const int _maxFileSizeBytes = 900 * 1024; // 900KB to stay under 1MB
+  static const int _maxImageDimension = 1200; // Max width or height
+  static const int _compressionQuality = 85; // JPEG quality
 
   @override
   void initState() {
@@ -71,7 +75,6 @@ class _AddExpensePageState extends State<AddExpensePage> {
         await _showImageSourceDialog();
       } else {
         debugPrint('🚀 PICK IMAGE: Using DESKTOP path');
-        // Desktop platforms - use a working approach
         await _pickImageFromDesktop();
       }
     } catch (e) {
@@ -87,7 +90,7 @@ class _AddExpensePageState extends State<AddExpensePage> {
     try {
       final html.FileUploadInputElement uploadInput =
           html.FileUploadInputElement();
-      uploadInput.accept = '.jpg,.jpeg,.png,.pdf';
+      uploadInput.accept = '.jpg,.jpeg,.png';
       uploadInput.click();
 
       uploadInput.onChange.listen((e) async {
@@ -95,20 +98,45 @@ class _AddExpensePageState extends State<AddExpensePage> {
         if (files!.isEmpty) return;
 
         final html.File file = files[0];
+
+        // Check file size before processing
+        if (file.size > 10 * 1024 * 1024) {
+          // 10MB limit
+          _showErrorSnackBar(
+            'File is too large. Please select an image smaller than 10MB.',
+          );
+          return;
+        }
+
         final reader = html.FileReader();
 
-        reader.onLoadEnd.listen((e) {
-          final String result = reader.result as String;
-          final String base64 =
-              result.split(',')[1]; // Remove data:image/jpeg;base64, prefix
+        reader.onLoadEnd.listen((e) async {
+          try {
+            final String result = reader.result as String;
+            final String base64 = result.split(',')[1];
+            final Uint8List bytes = base64Decode(base64);
 
-          setState(() {
-            _receiptBase64 = base64;
-            _receiptFileName = file.name;
-            _receiptImageBytes = base64Decode(base64);
-          });
+            debugPrint(
+              'Original file size: ${bytes.length} bytes (${(bytes.length / 1024).toStringAsFixed(1)} KB)',
+            );
 
-          _showSuccessSnackBar('Receipt image selected successfully');
+            // Compress the image
+            final compressedBytes = await _compressImageBytes(bytes);
+            final compressedBase64 = base64Encode(compressedBytes);
+
+            setState(() {
+              _receiptImageBytes = compressedBytes;
+              _receiptBase64 = compressedBase64;
+              _receiptFileName = file.name;
+            });
+
+            _showSuccessSnackBar(
+              'Receipt image processed successfully (${(compressedBytes.length / 1024).toStringAsFixed(1)} KB)',
+            );
+          } catch (e) {
+            debugPrint('Error processing web image: $e');
+            _showErrorSnackBar('Error processing image: ${e.toString()}');
+          }
         });
 
         reader.onError.listen((e) {
@@ -125,17 +153,15 @@ class _AddExpensePageState extends State<AddExpensePage> {
 
   Future<void> _pickImageFromDesktop() async {
     try {
-      // For desktop, we'll use a different approach
-      // Since file_picker has issues, we'll use the image_picker which works better on desktop
       if (_picker == null) {
         _picker = ImagePicker();
       }
 
       final XFile? image = await _picker!.pickImage(
-        source: ImageSource.gallery, // This opens file explorer on desktop
-        maxWidth: 1800,
-        maxHeight: 1800,
-        imageQuality: 85,
+        source: ImageSource.gallery,
+        maxWidth: _maxImageDimension.toDouble(),
+        maxHeight: _maxImageDimension.toDouble(),
+        imageQuality: _compressionQuality,
       );
 
       if (image != null) {
@@ -206,9 +232,9 @@ class _AddExpensePageState extends State<AddExpensePage> {
 
       final XFile? image = await _picker!.pickImage(
         source: ImageSource.camera,
-        maxWidth: 1800,
-        maxHeight: 1800,
-        imageQuality: 85,
+        maxWidth: _maxImageDimension.toDouble(),
+        maxHeight: _maxImageDimension.toDouble(),
+        imageQuality: _compressionQuality,
       );
 
       if (image != null) {
@@ -230,9 +256,9 @@ class _AddExpensePageState extends State<AddExpensePage> {
 
       final XFile? image = await _picker!.pickImage(
         source: ImageSource.gallery,
-        maxWidth: 1800,
-        maxHeight: 1800,
-        imageQuality: 85,
+        maxWidth: _maxImageDimension.toDouble(),
+        maxHeight: _maxImageDimension.toDouble(),
+        imageQuality: _compressionQuality,
       );
 
       if (image != null) {
@@ -246,283 +272,159 @@ class _AddExpensePageState extends State<AddExpensePage> {
 
   Future<void> _processSelectedImage(XFile image) async {
     try {
-      // Use your approach to read the file
-      List<int> imageBytes;
+      debugPrint('Processing selected image: ${image.name}');
 
-      if (kIsWeb) {
-        imageBytes = await image.readAsBytes();
-      } else {
-        // For mobile/desktop, read the file directly
-        final file = File(image.path);
-        imageBytes = file.readAsBytesSync(); // Your preferred approach
-      }
-
-      debugPrint('Original image bytes length: ${imageBytes.length}');
-
-      // Check initial size
-      final initialSizeKB = imageBytes.length / 1024;
-      debugPrint('Original image size: ${initialSizeKB.toStringAsFixed(1)} KB');
-
-      // AGGRESSIVE COMPRESSION - We need to be under 750KB to stay under Firestore 1MB limit
-      Uint8List processedBytes = await _aggressiveCompress(
-        Uint8List.fromList(imageBytes),
-      );
-
-      final compressedSizeKB = processedBytes.length / 1024;
+      // Read image bytes
+      final Uint8List imageBytes = await image.readAsBytes();
       debugPrint(
-        'Final compressed image size: ${compressedSizeKB.toStringAsFixed(1)} KB',
+        'Original image size: ${imageBytes.length} bytes (${(imageBytes.length / 1024).toStringAsFixed(1)} KB)',
       );
 
-      // Use your approach to convert to base64
-      String base64Image = base64Encode(processedBytes);
-      debugPrint('Base64 string length: ${base64Image.length} characters');
+      // Compress the image
+      final compressedBytes = await _compressImageBytes(imageBytes);
 
-      // Final validation - base64 should be under 1MB (1048576 characters)
-      if (base64Image.length > 1000000) {
-        // Leave some safety margin
-        _showErrorSnackBar(
-          'Image is still too large after compression. Please use a smaller image or take a new photo.',
-        );
-        return;
+      // Convert to base64
+      final base64String = base64Encode(compressedBytes);
+
+      // Validate final size
+      if (base64String.length > 1048576) {
+        // 1MB in base64 characters
+        throw 'Image is still too large after compression. Please use a smaller image.';
       }
 
       setState(() {
-        if (kIsWeb) {
-          _receiptImageBytes = processedBytes;
-        } else {
-          // FIXED: Don't store original file, store compressed data
-          // Create a temporary file with compressed data if needed
-          _receiptImageBytes =
-              processedBytes; // Store compressed bytes for all platforms
-        }
+        _receiptImageBytes = compressedBytes;
+        _receiptBase64 = base64String;
         _receiptFileName = image.name;
-        _receiptBase64 = base64Image; // Using your base64 conversion approach
       });
 
       _showSuccessSnackBar(
-        'Receipt image processed successfully (${compressedSizeKB.toStringAsFixed(1)} KB)',
+        'Receipt image processed successfully (${(compressedBytes.length / 1024).toStringAsFixed(1)} KB)',
       );
+
+      debugPrint('✅ Image processed successfully:');
+      debugPrint('   - Compressed size: ${compressedBytes.length} bytes');
+      debugPrint('   - Base64 length: ${base64String.length} characters');
     } catch (e) {
-      debugPrint('Error in _processSelectedImage: $e');
+      debugPrint('❌ Error processing image: $e');
       _showErrorSnackBar('Error processing image: ${e.toString()}');
     }
   }
 
-  Future<Uint8List> _aggressiveCompress(Uint8List bytes) async {
-    try {
-      // Multiple compression passes with increasingly aggressive settings
-      Uint8List currentBytes = bytes;
+  /// Main compression function - this is where the magic happens
+  Future<Uint8List> _compressImageBytes(Uint8List bytes) async {
+    debugPrint('🔄 Starting image compression...');
 
-      // Pass 1: If over 500KB, resize aggressively
-      if (currentBytes.length > 500 * 1024) {
-        currentBytes = await _resizeImage(
-          currentBytes,
-          800,
-          30,
-        ); // 800px max, 30% quality
-      }
-
-      // Pass 2: If still over 400KB, resize more
-      if (currentBytes.length > 400 * 1024) {
-        currentBytes = await _resizeImage(
-          currentBytes,
-          600,
-          25,
-        ); // 600px max, 25% quality
-      }
-
-      // Pass 3: If still over 300KB, resize even more
-      if (currentBytes.length > 300 * 1024) {
-        currentBytes = await _resizeImage(
-          currentBytes,
-          400,
-          20,
-        ); // 400px max, 20% quality
-      }
-
-      // Pass 4: Final aggressive compression if still too large
-      if (currentBytes.length > 250 * 1024) {
-        currentBytes = await _resizeImage(
-          currentBytes,
-          300,
-          15,
-        ); // 300px max, 15% quality
-      }
-
-      debugPrint(
-        'Compression passes complete. Final size: ${(currentBytes.length / 1024).toStringAsFixed(1)} KB',
-      );
-
-      return currentBytes;
-    } catch (e) {
-      debugPrint('Compression failed, using minimal processing: $e');
-      // If compression fails, do a simple resize
-      return await _simpleResize(bytes);
-    }
-  }
-
-  Future<Uint8List> _resizeImage(
-    Uint8List bytes,
-    int maxSize,
-    int quality,
-  ) async {
-    try {
-      // This is a placeholder for image resizing
-      // You'll need to add the 'image' package for this to work properly
-
-      // For now, let's implement a simple approach using ImagePicker's built-in compression
-      // by re-compressing the image data
-
-      // Create a temporary file (for demonstration)
-      if (kIsWeb) {
-        // For web, we can't easily resize without additional libraries
-        // Return a scaled down version by reducing quality
-        return _reduceQuality(bytes, quality);
-      } else {
-        // For mobile/desktop, try to use image processing
-        return await _nativeImageResize(bytes, maxSize, quality);
-      }
-    } catch (e) {
-      debugPrint('Resize failed: $e');
+    // If already small enough, return as-is
+    if (bytes.length <= _maxFileSizeBytes) {
+      debugPrint('✅ Image already small enough, no compression needed');
       return bytes;
     }
-  }
 
-  Future<Uint8List> _nativeImageResize(
-    Uint8List bytes,
-    int maxSize,
-    int quality,
-  ) async {
     try {
-      // If you add the 'image' package, uncomment this:
-      /*
-      import 'package:image/image.dart' as img;
+      // return await _progressiveCompress(bytes);
+      img.Image? image = img.decodeImage(bytes);
+      if (image == null) {
+        throw 'Invalid image format';
+      }
+
+      debugPrint('Original dimensions: ${image.width}x${image.height}');
+
+      // Calculate new dimensions while maintaining aspect ratio
+      int newWidth = image.width;
+      int newHeight = image.height;
       
-      final image = img.decodeImage(bytes);
-      if (image != null) {
-        // Calculate new dimensions maintaining aspect ratio
-        int newWidth = image.width;
-        int newHeight = image.height;
-        
-        if (newWidth > maxSize || newHeight > maxSize) {
-          if (newWidth > newHeight) {
-            newHeight = (newHeight * maxSize / newWidth).round();
-            newWidth = maxSize;
-          } else {
-            newWidth = (newWidth * maxSize / newHeight).round();
-            newHeight = maxSize;
-          }
+      // Resize if too large
+      if (newWidth > _maxImageDimension || newHeight > _maxImageDimension) {
+        double ratio = newWidth / newHeight;
+        if (newWidth > newHeight) {
+          newWidth = _maxImageDimension;
+          newHeight = (newWidth / ratio).round();
+        } else {
+          newHeight = _maxImageDimension;
+          newWidth = (newHeight * ratio).round();
         }
         
-        final resized = img.copyResize(image, width: newWidth, height: newHeight);
-        final compressedBytes = img.encodeJpg(resized, quality: quality);
-        return Uint8List.fromList(compressedBytes);
+        debugPrint('Resizing to: ${newWidth}x${newHeight}');
+        image = img.copyResize(image, width: newWidth, height: newHeight);
       }
-      */
 
-      // For now, return a simple quality reduction
-      return _reduceQuality(bytes, quality);
+      // Try different quality levels until we get under the target size
+      int quality = _compressionQuality;
+      Uint8List compressedBytes;
+      
+      do {
+        compressedBytes = Uint8List.fromList(img.encodeJpg(image, quality: quality));
+        debugPrint('Quality $quality: ${compressedBytes.length} bytes');
+        
+        if (compressedBytes.length <= _maxFileSizeBytes) {
+          break;
+        }
+        
+        quality -= 10;
+      } while (quality > 10);
+
+      debugPrint('✅ Final compressed size: ${compressedBytes.length} bytes with quality $quality');
+      return compressedBytes;
     } catch (e) {
-      debugPrint('Native resize failed: $e');
+      debugPrint('❌ Compression failed: $e');
+      // Fallback to simple size reduction
+      return _fallbackCompress(bytes);
+    }
+  }
+
+  /// Progressive compression without external libraries
+  Future<Uint8List> _progressiveCompress(Uint8List bytes) async {
+    debugPrint('Using progressive compression fallback');
+
+    // This is a simplified approach that reduces file size
+    // by sampling the data. Not ideal but works as fallback.
+
+    int targetSize = _maxFileSizeBytes;
+
+    if (bytes.length <= targetSize) {
       return bytes;
     }
-  }
 
-  Future<Uint8List> _reduceQuality(Uint8List bytes, int quality) async {
-    // Simple quality reduction by taking every nth byte (crude but effective)
-    // This is a very basic approach - proper implementation would use image libraries
+    // Calculate how much we need to reduce
+    double compressionRatio = targetSize / bytes.length;
 
-    if (quality >= 50) return bytes;
-
-    // For very low quality, reduce data size by sampling
-    final reduction = (100 - quality) / 100;
-    final newLength = (bytes.length * (1 - reduction * 0.5)).round();
-
-    if (newLength < bytes.length) {
-      final step = bytes.length / newLength;
-      final List<int> reduced = [];
-
-      for (int i = 0; i < bytes.length; i += step.round()) {
-        if (i < bytes.length) {
-          reduced.add(bytes[i]);
-        }
-      }
-
-      return Uint8List.fromList(reduced);
+    if (compressionRatio < 0.1) {
+      throw 'Image is too large to compress effectively. Please use a smaller image.';
     }
 
-    return bytes;
+    // Simple byte sampling (not ideal but works as fallback)
+    int step = (1 / compressionRatio).round();
+    List<int> compressedData = [];
+
+    for (int i = 0; i < bytes.length; i += step) {
+      compressedData.add(bytes[i]);
+    }
+
+    Uint8List result = Uint8List.fromList(compressedData);
+    debugPrint(
+      'Progressive compression: ${bytes.length} -> ${result.length} bytes',
+    );
+
+    return result;
   }
 
-  Future<Uint8List> _simpleResize(Uint8List bytes) async {
-    // Emergency fallback - just take first 200KB of data
-    // This will likely corrupt the image but ensures size compliance
-    const maxBytes = 200 * 1024; // 200KB max
+  /// Emergency fallback compression
+  Future<Uint8List> _fallbackCompress(Uint8List bytes) async {
+    debugPrint('Using emergency fallback compression');
 
-    if (bytes.length > maxBytes) {
+    // Just truncate to max size as last resort
+    if (bytes.length > _maxFileSizeBytes) {
       _showWarningDialog(
-        'Image Too Large',
-        'The image had to be heavily compressed and may appear degraded. '
-            'For better quality, please use a smaller image or take a new photo with lower resolution.',
+        'Compression Warning',
+        'Image had to be heavily compressed. Quality may be reduced. '
+            'For better results, please use a smaller image or take a new photo.',
       );
 
-      return Uint8List.fromList(bytes.take(maxBytes).toList());
+      return Uint8List.fromList(bytes.take(_maxFileSizeBytes).toList());
     }
 
     return bytes;
-  }
-
-  Future<Uint8List> _compressImage(Uint8List bytes) async {
-    try {
-      // For web, we'll use a simple quality reduction approach
-      if (kIsWeb) {
-        return await _compressImageWeb(bytes);
-      } else {
-        // For mobile/desktop, we can use more sophisticated compression
-        return await _compressImageNative(bytes);
-      }
-    } catch (e) {
-      debugPrint('Compression failed, using original: $e');
-      return bytes;
-    }
-  }
-
-  Future<Uint8List> _compressImageWeb(Uint8List bytes) async {
-    // For web, we'll create a canvas and draw the image with reduced quality
-    // This is a simplified approach - in production you might want to use a proper image compression library
-
-    // For now, let's just resize if the image is too large
-    // You can add proper web image compression here using canvas or a library like 'image' package
-
-    return bytes; // Placeholder - implement proper web compression if needed
-  }
-
-  Future<Uint8List> _compressImageNative(Uint8List bytes) async {
-    // For native platforms, you can use the 'image' package for compression
-    // This is a placeholder implementation
-
-    try {
-      // If you add the 'image' package, you can uncomment and modify this:
-      /*
-      final image = img.decodeImage(bytes);
-      if (image != null) {
-        // Resize if too large
-        img.Image resized = image;
-        if (image.width > 1200 || image.height > 1200) {
-          resized = img.copyResize(image, width: 1200, height: 1200, interpolation: img.Interpolation.average);
-        }
-        
-        // Compress as JPEG with quality 85
-        final compressedBytes = img.encodeJpg(resized, quality: 85);
-        return Uint8List.fromList(compressedBytes);
-      }
-      */
-
-      return bytes;
-    } catch (e) {
-      debugPrint('Native compression failed: $e');
-      return bytes;
-    }
   }
 
   void _showWarningDialog(String title, String message) {
@@ -551,16 +453,15 @@ class _AddExpensePageState extends State<AddExpensePage> {
   void _removeImage() {
     debugPrint('🗑️ REMOVE: Clearing all image data');
     setState(() {
-      _receiptImage = null; // Legacy - keeping for compatibility
-      _receiptImageBytes = null; // This is what we actually use now
-      _receiptBase64 = null; // This is what goes to backend
-      _receiptFileName = null; // Filename
+      _receiptImageBytes = null;
+      _receiptBase64 = null;
+      _receiptFileName = null;
     });
     debugPrint('🗑️ REMOVE: All image data cleared');
   }
 
   bool _hasReceiptImage() {
-    return _receiptBase64 != null;
+    return _receiptBase64 != null && _receiptBase64!.isNotEmpty;
   }
 
   Future<void> _submitExpense() async {
@@ -920,7 +821,7 @@ class _AddExpensePageState extends State<AddExpensePage> {
 
               const SizedBox(height: 24),
 
-              // Receipt Upload Card (Now Required)
+              // Receipt Upload Card (Required)
               Card(
                 child: Padding(
                   padding: const EdgeInsets.all(24),
@@ -970,7 +871,7 @@ class _AddExpensePageState extends State<AddExpensePage> {
                       ),
                       const SizedBox(height: 8),
                       Text(
-                        'Upload a photo or scan of your receipt for verification. This is required for all expenses.',
+                        'Upload a photo or scan of your receipt for verification. Images will be compressed to fit storage requirements.',
                         style: TextStyle(
                           color: AppTheme.textSecondary,
                           fontSize: 14,
@@ -1043,12 +944,7 @@ class _AddExpensePageState extends State<AddExpensePage> {
                                         ),
                                         const SizedBox(height: 4),
                                         Text(
-                                          kIsWeb
-                                              ? 'JPG, PNG, or PDF • Max 10MB'
-                                              : (Platform.isAndroid ||
-                                                  Platform.isIOS)
-                                              ? 'Camera or Gallery • JPG, PNG'
-                                              : 'JPG, PNG files',
+                                          'JPG, PNG • Auto-compressed',
                                           style: TextStyle(
                                             fontSize: 12,
                                             color: AppTheme.textSecondary,
@@ -1074,19 +970,43 @@ class _AddExpensePageState extends State<AddExpensePage> {
                                 child: ClipRRect(
                                   borderRadius: BorderRadius.circular(12),
                                   child:
-                                      kIsWeb && _receiptImageBytes != null
+                                      _receiptImageBytes != null
                                           ? Image.memory(
                                             _receiptImageBytes!,
                                             width: double.infinity,
                                             height: double.infinity,
                                             fit: BoxFit.cover,
-                                          )
-                                          : _receiptImage != null
-                                          ? Image.file(
-                                            _receiptImage!,
-                                            width: double.infinity,
-                                            height: double.infinity,
-                                            fit: BoxFit.cover,
+                                            errorBuilder: (
+                                              context,
+                                              error,
+                                              stackTrace,
+                                            ) {
+                                              return Container(
+                                                width: double.infinity,
+                                                height: double.infinity,
+                                                color: Colors.grey[200],
+                                                child: const Column(
+                                                  mainAxisAlignment:
+                                                      MainAxisAlignment.center,
+                                                  children: [
+                                                    Icon(
+                                                      Icons.receipt,
+                                                      size: 64,
+                                                      color: Colors.grey,
+                                                    ),
+                                                    SizedBox(height: 8),
+                                                    Text(
+                                                      'Receipt Image Attached',
+                                                      style: TextStyle(
+                                                        color: Colors.grey,
+                                                        fontWeight:
+                                                            FontWeight.w500,
+                                                      ),
+                                                    ),
+                                                  ],
+                                                ),
+                                              );
+                                            },
                                           )
                                           : Container(
                                             width: double.infinity,
@@ -1153,7 +1073,7 @@ class _AddExpensePageState extends State<AddExpensePage> {
                             const SizedBox(width: 6),
                             Expanded(
                               child: Text(
-                                'Receipt attached: ${_receiptFileName ?? 'receipt_image'}',
+                                'Receipt attached: ${_receiptFileName ?? 'receipt_image'} (${(_receiptImageBytes?.length ?? 0 / 1024).toStringAsFixed(1)} KB)',
                                 style: TextStyle(
                                   color: Colors.green,
                                   fontWeight: FontWeight.w500,
@@ -1262,9 +1182,9 @@ class _AddExpensePageState extends State<AddExpensePage> {
                           const SizedBox(height: 4),
                           Text(
                             '• Receipt attachment is mandatory for all expenses\n'
+                            '• Images are automatically compressed for storage\n'
                             '• Once submitted, the expense will be in "Pending" status\n'
                             '• Budget Managers will review and approve the expense\n'
-                            '• Approved expenses will be reflected in the budget\n'
                             '• You will be notified of any status changes',
                             style: TextStyle(
                               fontSize: 13,

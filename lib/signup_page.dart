@@ -70,12 +70,6 @@ class _SignupPageState extends State<SignupPage> {
   ];
 
   @override
-  void initState() {
-    super.initState();
-    _logPageAccess();
-  }
-
-  @override
   void dispose() {
     _pageController.dispose();
     _adminFirstNameController.dispose();
@@ -95,53 +89,13 @@ class _SignupPageState extends State<SignupPage> {
     super.dispose();
   }
 
-  void _logPageAccess() {
-    _logger.info(
-      'Company registration page accessed',
-      category: LogCategory.accountManagement,
-      data: {
-        'timestamp': DateTime.now().toIso8601String(),
-        'user_agent': 'Flutter App',
-        'registration_type': 'company_with_admin',
-      },
-    );
-  }
-
   void _nextStep() {
-    _logger.logUserAction(
-      'Registration step navigation attempted',
-      data: {
-        'current_step': _currentStep,
-        'target_step': _currentStep + 1,
-        'step_name': _getStepName(_currentStep),
-      },
-    );
-
     if (_currentStep < 2) {
       // Validate current step
       if (_currentStep == 0 && !_validateAdminInfo()) {
-        _logger.warning(
-          'Registration step validation failed - admin info',
-          category: LogCategory.accountManagement,
-          data: {
-            'current_step': _currentStep,
-            'validation_type': 'admin_information',
-            'admin_email': _adminEmailController.text.trim(),
-          },
-        );
         return;
       }
       if (_currentStep == 1 && !_validateCompanyInfo()) {
-        _logger.warning(
-          'Registration step validation failed - company info',
-          category: LogCategory.accountManagement,
-          data: {
-            'current_step': _currentStep,
-            'validation_type': 'company_information',
-            'company_name': _companyNameController.text.trim(),
-            'company_email': _companyEmailController.text.trim(),
-          },
-        );
         return;
       }
 
@@ -153,43 +107,14 @@ class _SignupPageState extends State<SignupPage> {
         duration: const Duration(milliseconds: 300),
         curve: Curves.easeInOut,
       );
-
-      _logger.logUserAction(
-        'Registration step navigation successful',
-        data: {
-          'new_step': _currentStep,
-          'step_name': _getStepName(_currentStep),
-          'navigation_direction': 'forward',
-        },
-      );
     } else {
       // Final step - submit registration
-      _logger.info(
-        'Registration submission initiated',
-        category: LogCategory.accountManagement,
-        data: {
-          'admin_email': _adminEmailController.text.trim(),
-          'company_name': _companyNameController.text.trim(),
-          'company_email': _companyEmailController.text.trim(),
-          'company_size': _companySize,
-          'industry': _industryType,
-        },
-      );
       _handleRegistration();
     }
   }
 
   void _previousStep() {
     if (_currentStep > 0) {
-      _logger.logUserAction(
-        'Registration step navigation - previous',
-        data: {
-          'current_step': _currentStep,
-          'target_step': _currentStep - 1,
-          'navigation_direction': 'backward',
-        },
-      );
-
       setState(() {
         _currentStep--;
       });
@@ -215,17 +140,13 @@ class _SignupPageState extends State<SignupPage> {
   }
 
   bool _validateAdminInfo() {
-    List<String> validationErrors = [];
-
     // Validate admin information
     if (_adminFirstNameController.text.trim().isEmpty) {
-      validationErrors.add('First name is empty');
       _showErrorSnackBar('Please enter your first name');
       return false;
     }
 
     if (_adminLastNameController.text.trim().isEmpty) {
-      validationErrors.add('Last name is empty');
       _showErrorSnackBar('Please enter your last name');
       return false;
     }
@@ -234,43 +155,27 @@ class _SignupPageState extends State<SignupPage> {
         !RegExp(
           r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$',
         ).hasMatch(_adminEmailController.text.trim())) {
-      validationErrors.add('Invalid email format');
       _showErrorSnackBar('Please enter a valid email address');
       return false;
     }
 
     if (_adminPasswordController.text.isEmpty ||
         _adminPasswordController.text.length < 6) {
-      validationErrors.add('Password too short');
       _showErrorSnackBar('Password must be at least 6 characters long');
       return false;
     }
 
     if (_adminPasswordController.text != _adminConfirmPasswordController.text) {
-      validationErrors.add('Passwords do not match');
       _showErrorSnackBar('Passwords do not match');
       return false;
     }
-
-    _logger.debug(
-      'Admin information validation successful',
-      category: LogCategory.accountManagement,
-      data: {
-        'admin_email': _adminEmailController.text.trim(),
-        'has_phone': _adminPhoneController.text.trim().isNotEmpty,
-        'password_length': _adminPasswordController.text.length,
-      },
-    );
 
     return true;
   }
 
   bool _validateCompanyInfo() {
-    List<String> validationErrors = [];
-
     // Validate company information
     if (_companyNameController.text.trim().isEmpty) {
-      validationErrors.add('Company name is empty');
       _showErrorSnackBar('Please enter your company name');
       return false;
     }
@@ -279,24 +184,9 @@ class _SignupPageState extends State<SignupPage> {
         !RegExp(
           r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$',
         ).hasMatch(_companyEmailController.text.trim())) {
-      validationErrors.add('Invalid company email');
       _showErrorSnackBar('Please enter a valid company email address');
       return false;
     }
-
-    _logger.debug(
-      'Company information validation successful',
-      category: LogCategory.accountManagement,
-      data: {
-        'company_name': _companyNameController.text.trim(),
-        'company_email': _companyEmailController.text.trim(),
-        'has_phone': _companyPhoneController.text.trim().isNotEmpty,
-        'has_website': _companyWebsiteController.text.trim().isNotEmpty,
-        'has_address': _companyAddressController.text.trim().isNotEmpty,
-        'company_size': _companySize,
-        'industry': _industryType,
-      },
-    );
 
     return true;
   }
@@ -308,16 +198,6 @@ class _SignupPageState extends State<SignupPage> {
     }
 
     if (!_agreeToTerms) {
-      _logger.logSecurity(
-        'Registration attempt without terms agreement',
-        level: LogLevel.warning,
-        data: {
-          'admin_email': _adminEmailController.text.trim(),
-          'company_name': _companyNameController.text.trim(),
-          'terms_accepted': false,
-        },
-      );
-
       _showErrorSnackBar(
         'You must agree to the Terms of Service and Privacy Policy',
       );
@@ -331,211 +211,94 @@ class _SignupPageState extends State<SignupPage> {
     final adminEmail = _adminEmailController.text.trim();
     final companyName = _companyNameController.text.trim();
     final companyEmail = _companyEmailController.text.trim();
+    final adminName =
+        '${_adminFirstNameController.text.trim()} ${_adminLastNameController.text.trim()}';
 
-    await _logger.timeOperation(
-      'Company Registration Process',
-      () async {
-        try {
-          await _logger.info(
-            'Starting company registration process',
-            category: LogCategory.accountManagement,
-            data: {
-              'admin_email': adminEmail,
-              'admin_name':
-                  '${_adminFirstNameController.text.trim()} ${_adminLastNameController.text.trim()}',
-              'company_name': companyName,
-              'company_email': companyEmail,
-              'company_size': _companySize,
-              'industry': _industryType,
-              'has_admin_phone': _adminPhoneController.text.trim().isNotEmpty,
-              'has_company_phone':
-                  _companyPhoneController.text.trim().isNotEmpty,
-              'has_company_website':
-                  _companyWebsiteController.text.trim().isNotEmpty,
-              'has_company_address':
-                  _companyAddressController.text.trim().isNotEmpty,
-              'terms_accepted': _agreeToTerms,
-            },
-          );
+    try {
+      final firebaseAuthService = Provider.of<FirebaseAuthService>(
+        context,
+        listen: false,
+      );
 
-          final firebaseAuthService = Provider.of<FirebaseAuthService>(
-            context,
-            listen: false,
-          );
+      // Create company object
+      final company = Company(
+        companyId: '', // Will be generated by the service
+        companyName: companyName,
+        email: companyEmail,
+        phone: _companyPhoneController.text.trim(),
+        address: _companyAddressController.text.trim(),
+        city: _companyCityController.text.trim(),
+        state: _companyStateController.text.trim(),
+        zipcode: _companyZipController.text.trim(),
+        website: _companyWebsiteController.text.trim(),
+        size: _companySize,
+        industry: _industryType,
+        createdAt: DateTime.now(),
+      );
 
-          // Create company object
-          final company = Company(
-            companyId: '', // Will be generated by the service
-            companyName: companyName,
-            email: companyEmail,
-            phone: _companyPhoneController.text.trim(),
-            address: _companyAddressController.text.trim(),
-            city: _companyCityController.text.trim(),
-            state: _companyStateController.text.trim(),
-            zipcode: _companyZipController.text.trim(),
-            website: _companyWebsiteController.text.trim(),
-            size: _companySize,
-            industry: _industryType,
-            createdAt: DateTime.now(),
-          );
+      // Register company with admin - this handles internal logging
+      final success = await firebaseAuthService.registerCompanyWithAdmin(
+        company: company,
+        adminName: adminName,
+        adminEmail: adminEmail,
+        adminPassword: _adminPasswordController.text,
+        adminPhone: _adminPhoneController.text.trim(),
+      );
 
-          await _logger.debug(
-            'Company object created, calling registration service',
-            category: LogCategory.accountManagement,
-            data: {'company_data_prepared': true, 'admin_data_prepared': true},
-          );
+      if (success) {
+        // Log successful signup completion
+        await _logger.logCompanyRegistration(
+          companyName,
+          adminEmail
+        );
 
-          // Register company with admin
-          final success = await firebaseAuthService.registerCompanyWithAdmin(
-            company: company,
-            adminName:
-                '${_adminFirstNameController.text.trim()} ${_adminLastNameController.text.trim()}',
-            adminEmail: adminEmail,
-            adminPassword: _adminPasswordController.text,
-            adminPhone: _adminPhoneController.text.trim(),
-          );
+        // Show success message
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: const Text(
+              'Registration successful! You can now sign in.',
+            ),
+            backgroundColor: Colors.green[700],
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(10),
+            ),
+            duration: const Duration(seconds: 5),
+          ),
+        );
 
-          if (success) {
-            await _logger.logAccountManagement(
-              'Company registration completed successfully',
-              targetEmail: adminEmail,
-              data: {
-                'company_name': companyName,
-                'company_email': companyEmail,
-                'admin_email': adminEmail,
-                'company_size': _companySize,
-                'industry': _industryType,
-                'registration_method': 'self_registration',
-                'has_admin_phone': _adminPhoneController.text.trim().isNotEmpty,
-                'has_company_address':
-                    _companyAddressController.text.trim().isNotEmpty,
-              },
-            );
+        // Navigate to login page
+        Navigator.of(context).pushReplacementNamed('/login');
+      } else {
+        _showErrorSnackBar('Registration failed. Please try again.');
+      }
+    } catch (e) {
+      String errorMessage = e.toString();
 
-            // Show success message
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: const Text(
-                  'Registration successful! You can now sign in.',
-                ),
-                backgroundColor: Colors.green[700],
-                behavior: SnackBarBehavior.floating,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                duration: const Duration(seconds: 5),
-              ),
-            );
+      // Handle Firebase Auth specific errors
+      if (errorMessage.contains('email-already-in-use')) {
+        errorMessage = 'An account with this email address already exists.';
+      } else if (errorMessage.contains('weak-password')) {
+        errorMessage =
+            'The password is too weak. Please choose a stronger password.';
+      } else if (errorMessage.contains('invalid-email')) {
+        errorMessage = 'Please enter a valid email address.';
+      }
 
-            await _logger.logUserAction(
-              'Navigating to login after successful registration',
-              data: {
-                'source_page': 'company_registration',
-                'target_route': '/login',
-                'navigation_type': 'pushReplacement',
-                'registration_success': true,
-              },
-            );
-
-            // Navigate to login page
-            Navigator.of(context).pushReplacementNamed('/login');
-          } else {
-            await _logger.error(
-              'Company registration failed - service returned false',
-              category: LogCategory.accountManagement,
-              data: {
-                'admin_email': adminEmail,
-                'company_name': companyName,
-                'company_email': companyEmail,
-                'failure_reason': 'Service returned false',
-              },
-            );
-
-            _showErrorSnackBar('Registration failed. Please try again.');
-          }
-        } catch (e) {
-          await _logger.error(
-            'Company registration failed with exception',
-            category: LogCategory.accountManagement,
-            error: e,
-            data: {
-              'admin_email': adminEmail,
-              'company_name': companyName,
-              'company_email': companyEmail,
-              'error_type': e.runtimeType.toString(),
-            },
-          );
-
-          String errorMessage = e.toString();
-
-          // Handle Firebase Auth specific errors
-          if (errorMessage.contains('email-already-in-use')) {
-            errorMessage = 'An account with this email address already exists.';
-
-            await _logger.logSecurity(
-              'Registration attempt with existing email',
-              level: LogLevel.warning,
-              data: {
-                'admin_email': adminEmail,
-                'company_name': companyName,
-                'conflict_type': 'email_already_exists',
-              },
-            );
-          } else if (errorMessage.contains('weak-password')) {
-            errorMessage =
-                'The password is too weak. Please choose a stronger password.';
-
-            await _logger.warning(
-              'Registration failed due to weak password',
-              category: LogCategory.accountManagement,
-              data: {
-                'admin_email': adminEmail,
-                'password_length': _adminPasswordController.text.length,
-              },
-            );
-          } else if (errorMessage.contains('invalid-email')) {
-            errorMessage = 'Please enter a valid email address.';
-
-            await _logger.warning(
-              'Registration failed due to invalid email format',
-              category: LogCategory.accountManagement,
-              data: {
-                'attempted_email': adminEmail,
-                'validation_error': 'invalid_email_format',
-              },
-            );
-          }
-
-          _showErrorSnackBar(errorMessage);
-        } finally {
-          if (mounted) {
-            setState(() {
-              _isLoading = false;
-            });
-          }
-        }
-      },
-      data: {
-        'admin_email': adminEmail,
-        'company_name': companyName,
-        'operation': 'company_registration',
-      },
-    );
+      _showErrorSnackBar(errorMessage);
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
+    }
   }
 
   void _handleTermsAgreementChange(bool? value) {
     setState(() {
       _agreeToTerms = value ?? false;
     });
-
-    _logger.logUserAction(
-      'Terms agreement toggled',
-      data: {
-        'terms_accepted': _agreeToTerms,
-        'admin_email': _adminEmailController.text.trim(),
-        'company_name': _companyNameController.text.trim(),
-      },
-    );
   }
 
   void _handlePasswordVisibilityToggle(bool isConfirmPassword) {
@@ -546,15 +309,6 @@ class _SignupPageState extends State<SignupPage> {
         _obscurePassword = !_obscurePassword;
       }
     });
-
-    _logger.logUserAction(
-      'Password visibility toggled',
-      data: {
-        'field_type': isConfirmPassword ? 'confirm_password' : 'password',
-        'is_visible':
-            isConfirmPassword ? !_obscureConfirmPassword : !_obscurePassword,
-      },
-    );
   }
 
   void _handleCompanySizeChange(String? value) {
@@ -562,14 +316,6 @@ class _SignupPageState extends State<SignupPage> {
       setState(() {
         _companySize = value;
       });
-
-      _logger.logUserAction(
-        'Company size selection changed',
-        data: {
-          'selected_size': value,
-          'company_name': _companyNameController.text.trim(),
-        },
-      );
     }
   }
 
@@ -578,27 +324,10 @@ class _SignupPageState extends State<SignupPage> {
       setState(() {
         _industryType = value;
       });
-
-      _logger.logUserAction(
-        'Industry type selection changed',
-        data: {
-          'selected_industry': value,
-          'company_name': _companyNameController.text.trim(),
-        },
-      );
     }
   }
 
   void _handleEditStep(int targetStep) {
-    _logger.logUserAction(
-      'Registration review - edit step requested',
-      data: {
-        'current_step': _currentStep,
-        'target_step': targetStep,
-        'edit_action': 'review_page_edit',
-      },
-    );
-
     setState(() {
       _currentStep = targetStep;
     });
@@ -610,15 +339,6 @@ class _SignupPageState extends State<SignupPage> {
   }
 
   void _showErrorSnackBar(String message) {
-    _logger.logUserAction(
-      'Error message displayed to user',
-      data: {
-        'error_message': message,
-        'display_method': 'snackbar',
-        'current_step': _currentStep,
-      },
-    );
-
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(message),
@@ -651,13 +371,6 @@ class _SignupPageState extends State<SignupPage> {
         leading: IconButton(
           icon: Icon(Icons.arrow_back, color: AppTheme.primaryColor),
           onPressed: () {
-            _logger.logUserAction(
-              'Registration page - back navigation',
-              data: {
-                'current_step': _currentStep,
-                'navigation_target': 'login_page',
-              },
-            );
             Navigator.pop(context);
           },
         ),

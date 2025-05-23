@@ -1,9 +1,11 @@
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'services/firebase_auth_service.dart';
 import 'services/app_logger.dart';
 import 'theme.dart';
 import 'widgets/common_widgets.dart';
+import 'models/firebase_models.dart';
 
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
@@ -25,7 +27,6 @@ class _LoginPageState extends State<LoginPage> {
   @override
   void initState() {
     super.initState();
-    _logPageAccess();
   }
 
   @override
@@ -35,32 +36,19 @@ class _LoginPageState extends State<LoginPage> {
     super.dispose();
   }
 
-  void _logPageAccess() {
-    _logger.info(
-      'Login page accessed',
-      category: LogCategory.authentication,
-      data: {
-        'timestamp': DateTime.now().toIso8601String(),
-        'user_agent': 'Flutter App',
-      },
-    );
-  }
 
   void _handleLogin() async {
     // Validate form
     if (!(_formKey.currentState?.validate() ?? false)) {
-      await _logger.warning(
-        'Login form validation failed',
-        category: LogCategory.authentication,
-        data: {
-          'email': _emailController.text.trim(),
-          'validation_errors': 'Form validation failed',
-        },
+      await _logger.logSuspiciousActivity(
+        'Someone tried to log in with invalid credentials',
+        null,
       );
       return;
     }
 
     final email = _emailController.text.trim();
+    final password = _passwordController.text;
 
     // Only set loading state if widget is still mounted
     if (mounted) {
@@ -69,85 +57,47 @@ class _LoginPageState extends State<LoginPage> {
       });
     }
 
-    await _logger.info(
-      'Login attempt started',
-      category: LogCategory.authentication,
-      data: {
-        'email': email,
-        'remember_me': _rememberMe,
-        'timestamp': DateTime.now().toIso8601String(),
-      },
-    );
-
     try {
       final firebaseAuthService = Provider.of<FirebaseAuthService>(
         context,
         listen: false,
       );
 
-      // Attempt to sign in
-      final user = await firebaseAuthService.signInWithEmail(
+      // Attempt to sign in using the auth service method
+      final userData = await firebaseAuthService.signInWithEmail(
         email,
-        _passwordController.text,
+        password,
       );
 
       // Check if widget is still mounted before proceeding
       if (!mounted) return;
 
-      if (user != null) {
-        await _logger.info(
-          'User authentication successful',
-          category: LogCategory.authentication,
-          data: {
-            'user_email': email,
-            'user_role': user['role'],
-            'user_status': user['status'],
-            'company_id': user['company_id'],
-            'account_id': user['account_id'],
-          },
-        );
+      if (userData != null) {
+        
 
-        // Check if account is active
-        if (user['status'] != 'Active') {
-          await _logger.logSecurity(
-            'Login attempt with inactive account',
-            level: LogLevel.warning,
-            data: {
-              'email': email,
-              'account_status': user['status'],
-              'user_role': user['role'],
-              'company_id': user['company_id'],
-            },
+        // The auth service already checks for active status, but double-check here
+        if (userData['status'] != 'Active') {
+          await _logger.logSuspiciousActivity(
+            'Logged in with inactive account \n Email: $email',
+            null,
           );
 
           _showErrorSnackBar(
             'Your account has been deactivated. Please contact your administrator.',
           );
+
+          // Sign out the user since they're inactive
+          await firebaseAuthService.signOut();
           return;
         }
 
-        await _logger.logAuthentication(
-          'User login successful - navigating to dashboard',
-          email: email,
-          data: {
-            'user_role': user['role'],
-            'target_dashboard': _getDashboardRoute(user['role']),
-            'remember_me': _rememberMe,
-          },
+        await _logger.logLogin(
+          _emailController.text,
         );
 
         // Navigate based on user role
-        _navigateToRoleDashboard(user['role']);
+        _navigateToRoleDashboard(userData['role']);
       } else {
-        await _logger.logAuthentication(
-          'Login failed - invalid credentials',
-          success: false,
-          email: email,
-          data: {
-            'reason': 'Invalid credentials returned from service',
-            'remember_me': _rememberMe,
-          },
-        );
 
         _showErrorSnackBar('Invalid email or password. Please try again.');
       }
@@ -155,56 +105,9 @@ class _LoginPageState extends State<LoginPage> {
       // Check if widget is still mounted before showing error
       if (!mounted) return;
 
-      await _logger.error(
-        'Login attempt failed with exception',
-        category: LogCategory.authentication,
-        error: e,
-        data: {
-          'email': email,
-          'error_type': e.runtimeType.toString(),
-          'remember_me': _rememberMe,
-        },
-      );
 
       String errorMessage = e.toString();
 
-      // Handle Firebase Auth specific errors
-      if (errorMessage.contains('user-not-found')) {
-        errorMessage = 'No account found with this email address.';
-        await _logger.logSecurity(
-          'Login attempt with non-existent user',
-          level: LogLevel.warning,
-          data: {'attempted_email': email},
-        );
-      } else if (errorMessage.contains('wrong-password')) {
-        errorMessage = 'Incorrect password. Please try again.';
-        await _logger.logSecurity(
-          'Login attempt with wrong password',
-          level: LogLevel.warning,
-          data: {'email': email},
-        );
-      } else if (errorMessage.contains('invalid-email')) {
-        errorMessage = 'Please enter a valid email address.';
-        await _logger.warning(
-          'Login attempt with invalid email format',
-          category: LogCategory.authentication,
-          data: {'attempted_email': email},
-        );
-      } else if (errorMessage.contains('user-disabled')) {
-        errorMessage = 'This account has been disabled.';
-        await _logger.logSecurity(
-          'Login attempt with disabled account',
-          level: LogLevel.warning,
-          data: {'email': email},
-        );
-      } else if (errorMessage.contains('too-many-requests')) {
-        errorMessage = 'Too many failed attempts. Please try again later.';
-        await _logger.logSecurity(
-          'Login rate limit exceeded',
-          level: LogLevel.warning,
-          data: {'email': email},
-        );
-      }
 
       _showErrorSnackBar(errorMessage);
     } finally {
@@ -238,14 +141,6 @@ class _LoginPageState extends State<LoginPage> {
 
     final route = _getDashboardRoute(role);
 
-    _logger.logUserAction(
-      'Navigating to role-based dashboard',
-      data: {
-        'user_role': role,
-        'target_route': route,
-        'navigation_type': 'pushReplacement',
-      },
-    );
 
     // Clear the navigation stack and navigate to appropriate dashboard
     switch (role) {
@@ -264,13 +159,9 @@ class _LoginPageState extends State<LoginPage> {
         Navigator.of(context).pushReplacementNamed('/spender-dashboard');
         break;
       default:
-        _logger.error(
+        _logger.logSuspiciousActivity(
           'Unknown user role during navigation',
-          category: LogCategory.authentication,
-          data: {
-            'unknown_role': role,
-            'attempted_navigation': 'role-based dashboard',
-          },
+          null,
         );
         _showErrorSnackBar('Unknown user role. Please contact support.');
     }
@@ -280,12 +171,8 @@ class _LoginPageState extends State<LoginPage> {
     // Check if widget is still mounted before showing dialog
     if (!mounted) return;
 
-    _logger.logUserAction(
-      'Forgot password dialog opened',
-      data: {'timestamp': DateTime.now().toIso8601String()},
-    );
 
-    final emailController = TextEditingController();
+    final emailController = TextEditingController(text: _emailController.text);
 
     showDialog(
       context: context,
@@ -331,10 +218,6 @@ class _LoginPageState extends State<LoginPage> {
             actions: [
               TextButton(
                 onPressed: () {
-                  _logger.logUserAction(
-                    'Forgot password dialog cancelled',
-                    data: {'action': 'cancel'},
-                  );
                   Navigator.pop(context);
                 },
                 style: TextButton.styleFrom(foregroundColor: Colors.grey[600]),
@@ -350,29 +233,10 @@ class _LoginPageState extends State<LoginPage> {
                 onPressed: () async {
                   // Validate email
                   final email = emailController.text.trim();
-
-                  await _logger.info(
-                    'Password reset attempt started',
-                    category: LogCategory.authentication,
-                    data: {
-                      'email': email,
-                      'timestamp': DateTime.now().toIso8601String(),
-                    },
-                  );
-
                   if (email.isEmpty ||
                       !RegExp(
                         r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$',
                       ).hasMatch(email)) {
-                    await _logger.warning(
-                      'Password reset attempted with invalid email',
-                      category: LogCategory.authentication,
-                      data: {
-                        'attempted_email': email,
-                        'validation_error': 'Invalid email format',
-                      },
-                    );
-
                     // Check if context is still valid before showing SnackBar
                     if (context.mounted) {
                       ScaffoldMessenger.of(context).showSnackBar(
@@ -392,7 +256,7 @@ class _LoginPageState extends State<LoginPage> {
                   }
 
                   try {
-                    // Send password reset email
+                    // Send password reset email using auth service
                     final firebaseAuthService =
                         Provider.of<FirebaseAuthService>(
                           context,
@@ -400,15 +264,11 @@ class _LoginPageState extends State<LoginPage> {
                         );
                     await firebaseAuthService.resetPassword(email);
 
-                    await _logger.logAuthentication(
-                      'Password reset email sent successfully',
-                      email: email,
-                      data: {
-                        'reset_method': 'email_link',
-                        'timestamp': DateTime.now().toIso8601String(),
-                      },
+                    await _logger.logAccountUpdated(
+                      'Email: $email',
+                      'Email: $email',
+                      ['Password Updated']
                     );
-
                     // Close dialog only if context is still valid
                     if (context.mounted) {
                       Navigator.pop(context);
@@ -431,26 +291,29 @@ class _LoginPageState extends State<LoginPage> {
                       }
                     }
                   } catch (e) {
-                    await _logger.error(
-                      'Password reset failed',
-                      category: LogCategory.authentication,
-                      error: e,
-                      data: {
-                        'email': email,
-                        'error_type': e.runtimeType.toString(),
-                      },
-                    );
+                    
 
                     String errorMessage = e.toString();
-                    if (errorMessage.contains('user-not-found')) {
+                    if (errorMessage.contains(
+                          '[firebase_auth/user-not-found]',
+                        ) ||
+                        errorMessage.contains('user-not-found')) {
                       errorMessage =
                           'No account found with this email address.';
-
-                      await _logger.logSecurity(
-                        'Password reset attempted for non-existent user',
-                        level: LogLevel.warning,
-                        data: {'attempted_email': email},
-                      );
+                    } else if (errorMessage.contains(
+                          '[firebase_auth/invalid-email]',
+                        ) ||
+                        errorMessage.contains('invalid-email')) {
+                      errorMessage = 'Please enter a valid email address.';
+                    } else if (errorMessage.contains(
+                          '[firebase_auth/too-many-requests]',
+                        ) ||
+                        errorMessage.contains('too-many-requests')) {
+                      errorMessage =
+                          'Too many requests. Please try again later.';
+                    } else {
+                      errorMessage =
+                          'Failed to send reset email. Please try again.';
                     }
 
                     // Check if context is still valid before showing error
@@ -479,11 +342,6 @@ class _LoginPageState extends State<LoginPage> {
     // Check if widget is still mounted before showing SnackBar
     if (!mounted) return;
 
-    _logger.logUserAction(
-      'Error message displayed to user',
-      data: {'error_message': message, 'display_method': 'snackbar'},
-    );
-
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(message),
@@ -499,11 +357,6 @@ class _LoginPageState extends State<LoginPage> {
     // Check if widget is still mounted before showing SnackBar
     if (!mounted) return;
 
-    _logger.logUserAction(
-      'Success message displayed to user',
-      data: {'success_message': message, 'display_method': 'snackbar'},
-    );
-
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(message),
@@ -515,15 +368,6 @@ class _LoginPageState extends State<LoginPage> {
   }
 
   void _handleSignUpNavigation() {
-    _logger.logUserAction(
-      'Navigating to company registration',
-      data: {
-        'source_page': 'login',
-        'target_route': '/signup',
-        'navigation_type': 'push',
-      },
-    );
-
     Navigator.pushNamed(context, '/signup');
   }
 
@@ -531,11 +375,6 @@ class _LoginPageState extends State<LoginPage> {
     setState(() {
       _rememberMe = value ?? false;
     });
-
-    _logger.logUserAction(
-      'Remember me option toggled',
-      data: {'remember_me': _rememberMe, 'user_preference_change': true},
-    );
   }
 
   @override
@@ -704,11 +543,6 @@ class _LoginPageState extends State<LoginPage> {
                                 setState(() {
                                   _obscureText = !_obscureText;
                                 });
-
-                                _logger.logUserAction(
-                                  'Password visibility toggled',
-                                  data: {'password_visible': !_obscureText},
-                                );
                               },
                             ),
                             border: OutlineInputBorder(
