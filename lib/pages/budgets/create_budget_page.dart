@@ -7,6 +7,7 @@ import '../../widgets/common_widgets.dart';
 import '../../theme.dart';
 import 'dart:math' as math;
 import 'package:intl/intl.dart';
+import 'dart:async';
 
 class CreateBudgetPage extends StatefulWidget {
   const CreateBudgetPage({super.key});
@@ -15,7 +16,8 @@ class CreateBudgetPage extends StatefulWidget {
   State<CreateBudgetPage> createState() => _CreateBudgetPageState();
 }
 
-class _CreateBudgetPageState extends State<CreateBudgetPage> with SingleTickerProviderStateMixin {
+class _CreateBudgetPageState extends State<CreateBudgetPage>
+    with TickerProviderStateMixin {
   final _formKey = GlobalKey<FormState>();
   final _budgetNameController = TextEditingController();
   final _budgetAmountController = TextEditingController();
@@ -28,15 +30,19 @@ class _CreateBudgetPageState extends State<CreateBudgetPage> with SingleTickerPr
   final _budgetDescriptionFocus = FocusNode();
   final _searchFocus = FocusNode();
 
-  // Animation controller for step transitions
-  late AnimationController _animationController;
+  // Animation controllers
+  late AnimationController _stepAnimationController;
+  late AnimationController _fadeController;
+  late AnimationController _progressController;
+  late Animation<double> _stepAnimation;
   late Animation<double> _fadeAnimation;
+  late Animation<double> _progressAnimation;
 
   int _currentStep = 0;
   final List<String> _stepTitles = [
     'Budget Details',
     'Authorized Spenders',
-    'Review & Create'
+    'Review & Create',
   ];
 
   List<Map<String, dynamic>> _availableSpenders = [];
@@ -45,64 +51,100 @@ class _CreateBudgetPageState extends State<CreateBudgetPage> with SingleTickerPr
   bool _isLoading = false;
   bool _isLoadingSpenders = true;
   String _searchQuery = '';
-  
+  Timer? _searchDebouncer;
+
   // For budget amount formatting
   double? _budgetAmount;
-  final _currencyFormatter = NumberFormat.currency(symbol: '\$', decimalDigits: 2);
+  final _currencyFormatter = NumberFormat.currency(
+    symbol: '₱',
+    decimalDigits: 2,
+  );
+
+  // Validation state
+  bool _hasValidatedStep1 = false;
+  bool _hasValidatedStep2 = false;
 
   @override
   void initState() {
     super.initState();
+    _initializeAnimations();
     _loadAvailableSpenders();
-    
-    // Initialize animation controller
-    _animationController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 300),
-    );
-    
-    _fadeAnimation = CurvedAnimation(
-      parent: _animationController,
-      curve: Curves.easeInOut,
-    );
-    
-    _animationController.forward();
-    
+
     // Add listener to search controller
     _searchController.addListener(_filterSpenders);
-    
+
     // Add listener to budget amount controller for currency formatting
     _budgetAmountController.addListener(_formatCurrency);
   }
-  
+
+  void _initializeAnimations() {
+    _stepAnimationController = AnimationController(
+      duration: const Duration(milliseconds: 300),
+      vsync: this,
+    );
+
+    _fadeController = AnimationController(
+      duration: const Duration(milliseconds: 400),
+      vsync: this,
+    );
+
+    _progressController = AnimationController(
+      duration: const Duration(milliseconds: 600),
+      vsync: this,
+    );
+
+    _stepAnimation = CurvedAnimation(
+      parent: _stepAnimationController,
+      curve: Curves.easeInOut,
+    );
+
+    _fadeAnimation = CurvedAnimation(
+      parent: _fadeController,
+      curve: Curves.easeIn,
+    );
+
+    _progressAnimation = CurvedAnimation(
+      parent: _progressController,
+      curve: Curves.easeOutCubic,
+    );
+
+    _stepAnimationController.forward();
+    _fadeController.forward();
+    _updateProgress();
+  }
+
+  void _updateProgress() {
+    _progressController.animateTo((_currentStep + 1) / _stepTitles.length);
+  }
+
   void _formatCurrency() {
     String text = _budgetAmountController.text;
     if (text.isEmpty) {
       _budgetAmount = null;
       return;
     }
-    
+
     // Remove all non-numeric characters
     String numericOnly = text.replaceAll(RegExp(r'[^0-9.]'), '');
-    
+
     if (numericOnly.isEmpty) {
       _budgetAmount = null;
       return;
     }
-    
+
     try {
       // Parse the numeric value
       final value = double.parse(numericOnly);
       _budgetAmount = value;
-      
+
       // Only update if the text is different to avoid recursive updates
       final formatted = _currencyFormatter.format(value).replaceAll(',', '');
       if (text != formatted && !text.endsWith('.')) {
         // Remember cursor position
         final cursorPos = _budgetAmountController.selection.start;
-        
+
         _budgetAmountController.text = formatted;
-        
+
         // Restore cursor position
         if (cursorPos != null && cursorPos >= 0) {
           final newPos = math.min(cursorPos, formatted.length);
@@ -118,33 +160,41 @@ class _CreateBudgetPageState extends State<CreateBudgetPage> with SingleTickerPr
   }
 
   void _filterSpenders() {
-    setState(() {
-      _searchQuery = _searchController.text.toLowerCase();
-      if (_searchQuery.isEmpty) {
-        _filteredSpenders = List.from(_availableSpenders);
-      } else {
-        _filteredSpenders = _availableSpenders.where((spender) {
-          final name = (spender['name'] ?? '').toLowerCase();
-          final email = (spender['email'] ?? '').toLowerCase();
-          return name.contains(_searchQuery) || email.contains(_searchQuery);
-        }).toList();
-      }
+    _searchDebouncer?.cancel();
+    _searchDebouncer = Timer(const Duration(milliseconds: 300), () {
+      setState(() {
+        _searchQuery = _searchController.text.toLowerCase();
+        if (_searchQuery.isEmpty) {
+          _filteredSpenders = List.from(_availableSpenders);
+        } else {
+          _filteredSpenders =
+              _availableSpenders.where((spender) {
+                final name = (spender['name'] ?? '').toLowerCase();
+                final email = (spender['email'] ?? '').toLowerCase();
+                return name.contains(_searchQuery) ||
+                    email.contains(_searchQuery);
+              }).toList();
+        }
+      });
     });
   }
 
   @override
   void dispose() {
+    _searchDebouncer?.cancel();
     _budgetNameController.dispose();
     _budgetAmountController.dispose();
     _budgetDescriptionController.dispose();
     _searchController.dispose();
-    
+
     _budgetNameFocus.dispose();
     _budgetAmountFocus.dispose();
     _budgetDescriptionFocus.dispose();
     _searchFocus.dispose();
-    
-    _animationController.dispose();
+
+    _stepAnimationController.dispose();
+    _fadeController.dispose();
+    _progressController.dispose();
     super.dispose();
   }
 
@@ -191,9 +241,12 @@ class _CreateBudgetPageState extends State<CreateBudgetPage> with SingleTickerPr
         context,
         listen: false,
       );
-      
+
       // Parse amount correctly (remove currency symbol)
-      final amountString = _budgetAmountController.text.replaceAll(RegExp(r'[^\d.]'), '');
+      final amountString = _budgetAmountController.text.replaceAll(
+        RegExp(r'[^\d.]'),
+        '',
+      );
       final amount = double.parse(amountString);
 
       final success = await budgetService.createBudget(
@@ -204,6 +257,7 @@ class _CreateBudgetPageState extends State<CreateBudgetPage> with SingleTickerPr
       );
 
       if (success) {
+        HapticFeedback.mediumImpact();
         _showSuccessSnackBar(
           'Budget created successfully! It is now pending approval.',
         );
@@ -254,23 +308,48 @@ class _CreateBudgetPageState extends State<CreateBudgetPage> with SingleTickerPr
       ),
     );
   }
-  
+
   void _goToStep(int step) {
-    // Save the form if moving forward
+    // Validate current step before moving forward
     if (step > _currentStep) {
-      if (!_formKey.currentState!.validate()) {
-        return;
+      if (_currentStep == 0) {
+        if (!_validateStep1()) {
+          HapticFeedback.heavyImpact();
+          return;
+        }
+        _hasValidatedStep1 = true;
+      } else if (_currentStep == 1) {
+        if (!_validateStep2()) {
+          HapticFeedback.heavyImpact();
+          return;
+        }
+        _hasValidatedStep2 = true;
       }
     }
-    
+
+    // Haptic feedback
+    HapticFeedback.selectionClick();
+
     // Handle animation
-    _animationController.reset();
-    
-    setState(() {
-      _currentStep = step;
+    _stepAnimationController.reverse().then((_) {
+      setState(() {
+        _currentStep = step;
+      });
+      _stepAnimationController.forward();
+      _updateProgress();
     });
-    
-    _animationController.forward();
+  }
+
+  bool _validateStep1() {
+    return _formKey.currentState?.validate() ?? false;
+  }
+
+  bool _validateStep2() {
+    if (_selectedSpenderIds.isEmpty) {
+      _showErrorSnackBar('Please select at least one authorized spender');
+      return false;
+    }
+    return true;
   }
 
   @override
@@ -278,12 +357,12 @@ class _CreateBudgetPageState extends State<CreateBudgetPage> with SingleTickerPr
     // Get screen size for responsive layout
     final screenSize = MediaQuery.of(context).size;
     final screenWidth = screenSize.width;
-    
+
     // Determine if we're on mobile, tablet, or desktop
     final isMobile = screenWidth < 600;
     final isTablet = screenWidth >= 600 && screenWidth < 1200;
     final isDesktop = screenWidth >= 1200;
-    
+
     return Scaffold(
       backgroundColor: AppTheme.scaffoldBackground,
       appBar: CustomAppBar(
@@ -294,47 +373,71 @@ class _CreateBudgetPageState extends State<CreateBudgetPage> with SingleTickerPr
             icon: const Icon(Icons.cancel_outlined),
             label: Text(isMobile ? '' : 'Cancel'),
             onPressed: () => Navigator.pop(context),
-            style: TextButton.styleFrom(
-              foregroundColor: Colors.white,
-            ),
+            style: TextButton.styleFrom(foregroundColor: Colors.white),
           ),
           const SizedBox(width: 8),
         ],
       ),
-      body: _isLoadingSpenders
-          ? const Center(
-              child: LoadingIndicator(
-                message: 'Loading authorized spenders...',
-                useCustomIndicator: true,
-              ),
-            )
-          : Form(
-              key: _formKey,
-              child: Column(
-                children: [
-                  // Step indicator
-                  _buildStepIndicator(isMobile),
-                  
-                  // Form content
-                  Expanded(
-                    child: FadeTransition(
-                      opacity: _fadeAnimation,
-                      child: isDesktop
-                          ? _buildDesktopLayout()
-                          : isTablet
-                              ? _buildTabletLayout()
-                              : _buildMobileLayout(),
+      body:
+          _isLoadingSpenders
+              ? Center(
+                child: TweenAnimationBuilder<double>(
+                  tween: Tween(begin: 0, end: 1),
+                  duration: const Duration(milliseconds: 600),
+                  curve: Curves.easeOutCubic,
+                  builder:
+                      (context, value, child) => Transform.scale(
+                        scale: value,
+                        child: LoadingIndicator(
+                          message: 'Loading authorized spenders...',
+                          useCustomIndicator: true,
+                        ),
+                      ),
+                ),
+              )
+              : Form(
+                key: _formKey,
+                child: Column(
+                  children: [
+                    // Step indicator with progress bar
+                    _buildStepIndicator(isMobile),
+
+                    // Form content
+                    Expanded(
+                      child: FadeTransition(
+                        opacity: _fadeAnimation,
+                        child: AnimatedSwitcher(
+                          duration: const Duration(milliseconds: 300),
+                          transitionBuilder: (child, animation) {
+                            return SlideTransition(
+                              position: Tween<Offset>(
+                                begin: const Offset(0.1, 0),
+                                end: Offset.zero,
+                              ).animate(animation),
+                              child: FadeTransition(
+                                opacity: animation,
+                                child: child,
+                              ),
+                            );
+                          },
+                          child:
+                              isDesktop
+                                  ? _buildDesktopLayout()
+                                  : isTablet
+                                  ? _buildTabletLayout()
+                                  : _buildMobileLayout(),
+                        ),
+                      ),
                     ),
-                  ),
-                  
-                  // Navigation buttons
-                  _buildNavigationButtons(),
-                ],
+
+                    // Navigation buttons
+                    _buildNavigationButtons(),
+                  ],
+                ),
               ),
-            ),
     );
   }
-  
+
   Widget _buildStepIndicator(bool isMobile) {
     return Container(
       padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 20),
@@ -348,61 +451,126 @@ class _CreateBudgetPageState extends State<CreateBudgetPage> with SingleTickerPr
           ),
         ],
       ),
-      child: isMobile
-          ? Row(
+      child: Column(
+        children: [
+          // Progress bar
+          Container(
+            height: 4,
+            margin: const EdgeInsets.only(bottom: 16),
+            child: AnimatedBuilder(
+              animation: _progressAnimation,
+              builder:
+                  (context, child) => LinearProgressIndicator(
+                    value: _progressAnimation.value,
+                    backgroundColor: Colors.grey[200],
+                    valueColor: AlwaysStoppedAnimation<Color>(
+                      AppTheme.primaryColor,
+                    ),
+                  ),
+            ),
+          ),
+
+          // Step indicators
+          if (isMobile)
+            Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: List.generate(
                 _stepTitles.length,
-                (index) => Container(
-                  width: 10,
-                  height: 10,
-                  margin: const EdgeInsets.symmetric(horizontal: 4),
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: index == _currentStep
-                        ? AppTheme.primaryColor
-                        : index < _currentStep
-                            ? AppTheme.primaryColor.withOpacity(0.5)
-                            : Colors.grey[300],
+                (index) => TweenAnimationBuilder<double>(
+                  tween: Tween(
+                    begin: 0.8,
+                    end: index <= _currentStep ? 1.0 : 0.8,
                   ),
+                  duration: const Duration(milliseconds: 300),
+                  curve: Curves.easeOutCubic,
+                  builder:
+                      (context, value, child) => Transform.scale(
+                        scale: value,
+                        child: Container(
+                          width: 10,
+                          height: 10,
+                          margin: const EdgeInsets.symmetric(horizontal: 4),
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            color:
+                                index == _currentStep
+                                    ? AppTheme.primaryColor
+                                    : index < _currentStep
+                                    ? AppTheme.primaryColor.withOpacity(0.5)
+                                    : Colors.grey[300],
+                          ),
+                        ),
+                      ),
                 ),
               ),
             )
-          : Row(
+          else
+            Row(
               children: List.generate(
                 _stepTitles.length,
                 (index) => Expanded(
                   child: Row(
                     children: [
                       // Circle with number
-                      Container(
-                        width: 28,
-                        height: 28,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          color: index == _currentStep
-                              ? AppTheme.primaryColor
-                              : index < _currentStep
-                                  ? AppTheme.primaryColor.withOpacity(0.5)
-                                  : Colors.grey[300],
+                      TweenAnimationBuilder<double>(
+                        tween: Tween(
+                          begin: 0.8,
+                          end: index <= _currentStep ? 1.0 : 0.8,
                         ),
-                        child: Center(
-                          child: Text(
-                            '${index + 1}',
-                            style: TextStyle(
-                              color: index <= _currentStep ? Colors.white : Colors.grey[600],
-                              fontWeight: FontWeight.bold,
+                        duration: const Duration(milliseconds: 300),
+                        curve: Curves.easeOutCubic,
+                        builder:
+                            (context, value, child) => Transform.scale(
+                              scale: value,
+                              child: Container(
+                                width: 28,
+                                height: 28,
+                                decoration: BoxDecoration(
+                                  shape: BoxShape.circle,
+                                  color:
+                                      index == _currentStep
+                                          ? AppTheme.primaryColor
+                                          : index < _currentStep
+                                          ? AppTheme.primaryColor.withOpacity(
+                                            0.5,
+                                          )
+                                          : Colors.grey[300],
+                                ),
+                                child: Center(
+                                  child:
+                                      index < _currentStep
+                                          ? const Icon(
+                                            Icons.check,
+                                            size: 16,
+                                            color: Colors.white,
+                                          )
+                                          : Text(
+                                            '${index + 1}',
+                                            style: TextStyle(
+                                              color:
+                                                  index <= _currentStep
+                                                      ? Colors.white
+                                                      : Colors.grey[600],
+                                              fontWeight: FontWeight.bold,
+                                            ),
+                                          ),
+                                ),
+                              ),
                             ),
-                          ),
-                        ),
                       ),
                       const SizedBox(width: 8),
                       // Step title
                       Text(
                         _stepTitles[index],
                         style: TextStyle(
-                          fontWeight: index == _currentStep ? FontWeight.bold : FontWeight.normal,
-                          color: index == _currentStep ? AppTheme.primaryColor : Colors.grey[600],
+                          fontWeight:
+                              index == _currentStep
+                                  ? FontWeight.bold
+                                  : FontWeight.normal,
+                          color:
+                              index == _currentStep
+                                  ? AppTheme.primaryColor
+                                  : Colors.grey[600],
                         ),
                       ),
                       // Line connector
@@ -411,9 +579,10 @@ class _CreateBudgetPageState extends State<CreateBudgetPage> with SingleTickerPr
                           child: Container(
                             margin: const EdgeInsets.symmetric(horizontal: 8),
                             height: 2,
-                            color: index < _currentStep
-                                ? AppTheme.primaryColor
-                                : Colors.grey[300],
+                            color:
+                                index < _currentStep
+                                    ? AppTheme.primaryColor
+                                    : Colors.grey[300],
                           ),
                         ),
                     ],
@@ -421,9 +590,11 @@ class _CreateBudgetPageState extends State<CreateBudgetPage> with SingleTickerPr
                 ),
               ),
             ),
+        ],
+      ),
     );
   }
-  
+
   Widget _buildNavigationButtons() {
     return Container(
       padding: const EdgeInsets.all(16),
@@ -443,7 +614,8 @@ class _CreateBudgetPageState extends State<CreateBudgetPage> with SingleTickerPr
             if (_currentStep > 0)
               Expanded(
                 child: OutlinedButton.icon(
-                  onPressed: _isLoading ? null : () => _goToStep(_currentStep - 1),
+                  onPressed:
+                      _isLoading ? null : () => _goToStep(_currentStep - 1),
                   icon: const Icon(Icons.arrow_back),
                   label: const Text('Back'),
                   style: OutlinedButton.styleFrom(
@@ -456,24 +628,33 @@ class _CreateBudgetPageState extends State<CreateBudgetPage> with SingleTickerPr
                   ),
                 ),
               ),
-              
+
             if (_currentStep > 0 && _currentStep < _stepTitles.length - 1)
               const SizedBox(width: 16),
-              
+
             Expanded(
               flex: 2,
               child: ElevatedButton.icon(
-                onPressed: _isLoading 
-                    ? null 
-                    : () {
-                        if (_currentStep < _stepTitles.length - 1) {
-                          _goToStep(_currentStep + 1);
-                        } else {
-                          _createBudget();
-                        }
-                      },
-                icon: Icon(_currentStep < _stepTitles.length - 1 ? Icons.arrow_forward : Icons.save),
-                label: Text(_currentStep < _stepTitles.length - 1 ? 'Continue' : 'Create Budget'),
+                onPressed:
+                    _isLoading
+                        ? null
+                        : () {
+                          if (_currentStep < _stepTitles.length - 1) {
+                            _goToStep(_currentStep + 1);
+                          } else {
+                            _createBudget();
+                          }
+                        },
+                icon: Icon(
+                  _currentStep < _stepTitles.length - 1
+                      ? Icons.arrow_forward
+                      : Icons.save,
+                ),
+                label: Text(
+                  _currentStep < _stepTitles.length - 1
+                      ? 'Continue'
+                      : 'Create Budget',
+                ),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: AppTheme.primaryColor,
                   foregroundColor: Colors.white,
@@ -490,7 +671,7 @@ class _CreateBudgetPageState extends State<CreateBudgetPage> with SingleTickerPr
       ),
     );
   }
-  
+
   Widget _buildDesktopLayout() {
     return SingleChildScrollView(
       padding: const EdgeInsets.all(24),
@@ -500,62 +681,95 @@ class _CreateBudgetPageState extends State<CreateBudgetPage> with SingleTickerPr
           // Left column (main content)
           Expanded(
             flex: 3,
-            child: _buildCurrentStepContent(isDesktop: true),
+            child: AnimatedSwitcher(
+              duration: const Duration(milliseconds: 300),
+              child: _buildCurrentStepContent(
+                key: ValueKey(_currentStep),
+                isDesktop: true,
+              ),
+            ),
           ),
-          
+
           const SizedBox(width: 24),
-          
+
           // Right column (help/info panel)
-          Expanded(
-            flex: 1,
-            child: _buildInfoPanel(),
-          ),
+          Expanded(flex: 1, child: _buildInfoPanel()),
         ],
       ),
     );
   }
-  
+
   Widget _buildTabletLayout() {
     return SingleChildScrollView(
       padding: const EdgeInsets.all(20),
       child: Column(
         children: [
-          _buildCurrentStepContent(isTablet: true),
+          AnimatedSwitcher(
+            duration: const Duration(milliseconds: 300),
+            child: _buildCurrentStepContent(
+              key: ValueKey(_currentStep),
+              isTablet: true,
+            ),
+          ),
           const SizedBox(height: 20),
           _buildInfoPanel(isTablet: true),
         ],
       ),
     );
   }
-  
+
   Widget _buildMobileLayout() {
     return SingleChildScrollView(
       padding: const EdgeInsets.all(16),
       child: Column(
         children: [
-          _buildCurrentStepContent(),
+          AnimatedSwitcher(
+            duration: const Duration(milliseconds: 300),
+            child: _buildCurrentStepContent(key: ValueKey(_currentStep)),
+          ),
           const SizedBox(height: 16),
           _buildInfoPanel(isMobile: true),
         ],
       ),
     );
   }
-  
-  Widget _buildCurrentStepContent({bool isDesktop = false, bool isTablet = false}) {
+
+  Widget _buildCurrentStepContent({
+    Key? key,
+    bool isDesktop = false,
+    bool isTablet = false,
+  }) {
     switch (_currentStep) {
       case 0:
-        return _buildBudgetDetailsStep(isDesktop: isDesktop, isTablet: isTablet);
+        return _buildBudgetDetailsStep(
+          key: key,
+          isDesktop: isDesktop,
+          isTablet: isTablet,
+        );
       case 1:
-        return _buildAuthorizedSpendersStep(isDesktop: isDesktop, isTablet: isTablet);
+        return _buildAuthorizedSpendersStep(
+          key: key,
+          isDesktop: isDesktop,
+          isTablet: isTablet,
+        );
       case 2:
-        return _buildReviewStep(isDesktop: isDesktop, isTablet: isTablet);
+        return _buildReviewStep(
+          key: key,
+          isDesktop: isDesktop,
+          isTablet: isTablet,
+        );
       default:
-        return Container();
+        return Container(key: key);
     }
   }
-  
-  Widget _buildBudgetDetailsStep({bool isDesktop = false, bool isTablet = false}) {
+
+  Widget _buildBudgetDetailsStep({
+    Key? key,
+    bool isDesktop = false,
+    bool isTablet = false,
+  }) {
     return Card(
+      key: key,
       elevation: 2,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       child: Padding(
@@ -569,27 +783,39 @@ class _CreateBudgetPageState extends State<CreateBudgetPage> with SingleTickerPr
               subtitle: 'Enter the basic information about your budget',
             ),
             const SizedBox(height: 24),
-            
+
             // Budget name
-            _buildInputField(
-              controller: _budgetNameController,
-              label: 'Budget Name',
-              hint: 'Enter a descriptive name for the budget',
-              iconData: Icons.title,
-              focusNode: _budgetNameFocus,
-              nextFocus: _budgetAmountFocus,
-              validator: (value) {
-                if (value?.trim().isEmpty ?? true) {
-                  return 'Budget name is required';
-                }
-                if (value!.trim().length < 3) {
-                  return 'Budget name must be at least 3 characters';
-                }
-                return null;
-              },
+            TweenAnimationBuilder<double>(
+              tween: Tween(begin: 0, end: 1),
+              duration: const Duration(milliseconds: 400),
+              curve: Curves.easeOutCubic,
+              builder:
+                  (context, value, child) => Transform.translate(
+                    offset: Offset(0, 20 * (1 - value)),
+                    child: Opacity(
+                      opacity: value,
+                      child: _buildInputField(
+                        controller: _budgetNameController,
+                        label: 'Budget Name',
+                        hint: 'Enter a descriptive name for the budget',
+                        iconData: Icons.title,
+                        focusNode: _budgetNameFocus,
+                        nextFocus: _budgetAmountFocus,
+                        validator: (value) {
+                          if (value?.trim().isEmpty ?? true) {
+                            return 'Budget name is required';
+                          }
+                          if (value!.trim().length < 3) {
+                            return 'Budget name must be at least 3 characters';
+                          }
+                          return null;
+                        },
+                      ),
+                    ),
+                  ),
             ),
             const SizedBox(height: 20),
-            
+
             // In desktop/tablet, show amount and description side by side
             if (isDesktop || isTablet)
               Row(
@@ -597,56 +823,83 @@ class _CreateBudgetPageState extends State<CreateBudgetPage> with SingleTickerPr
                 children: [
                   // Budget amount (left)
                   Expanded(
-                    child: _buildInputField(
-                      controller: _budgetAmountController,
-                      label: 'Budget Amount',
-                      hint: 'Enter budget amount',
-                      iconData: Icons.attach_money,
-                      keyboardType: TextInputType.numberWithOptions(decimal: true),
-                      focusNode: _budgetAmountFocus,
-                      nextFocus: _budgetDescriptionFocus,
-                      validator: (value) {
-                        if (value?.trim().isEmpty ?? true) {
-                          return 'Budget amount is required';
-                        }
-                        
-                        if (_budgetAmount == null) {
-                          return 'Please enter a valid number';
-                        }
-                        
-                        if (_budgetAmount! <= 0) {
-                          return 'Budget amount must be greater than zero';
-                        }
-                        
-                        if (_budgetAmount! > 10000000) {
-                          return 'Budget amount cannot exceed \$10,000,000';
-                        }
-                        
-                        return null;
-                      },
+                    child: TweenAnimationBuilder<double>(
+                      tween: Tween(begin: 0, end: 1),
+                      duration: const Duration(milliseconds: 500),
+                      curve: Curves.easeOutCubic,
+                      builder:
+                          (context, value, child) => Transform.translate(
+                            offset: Offset(0, 20 * (1 - value)),
+                            child: Opacity(
+                              opacity: value,
+                              child: _buildInputField(
+                                controller: _budgetAmountController,
+                                label: 'Budget Amount',
+                                hint: 'Enter budget amount',
+                                iconData: Icons.attach_money,
+                                keyboardType: TextInputType.numberWithOptions(
+                                  decimal: true,
+                                ),
+                                focusNode: _budgetAmountFocus,
+                                nextFocus: _budgetDescriptionFocus,
+                                validator: (value) {
+                                  if (value?.trim().isEmpty ?? true) {
+                                    return 'Budget amount is required';
+                                  }
+
+                                  if (_budgetAmount == null) {
+                                    return 'Please enter a valid number';
+                                  }
+
+                                  if (_budgetAmount! <= 0) {
+                                    return 'Budget amount must be greater than zero';
+                                  }
+
+                                  if (_budgetAmount! > 10000000) {
+                                    return 'Budget amount cannot exceed ₱10,000,000';
+                                  }
+
+                                  return null;
+                                },
+                              ),
+                            ),
+                          ),
                     ),
                   ),
                   const SizedBox(width: 20),
-                  
+
                   // Budget description (right)
                   Expanded(
                     flex: 2,
-                    child: _buildInputField(
-                      controller: _budgetDescriptionController,
-                      label: 'Budget Description',
-                      hint: 'Describe the purpose and scope of this budget',
-                      iconData: Icons.description,
-                      maxLines: 4,
-                      focusNode: _budgetDescriptionFocus,
-                      validator: (value) {
-                        if (value?.trim().isEmpty ?? true) {
-                          return 'Budget description is required';
-                        }
-                        if (value!.trim().length < 10) {
-                          return 'Please provide a more detailed description (at least 10 characters)';
-                        }
-                        return null;
-                      },
+                    child: TweenAnimationBuilder<double>(
+                      tween: Tween(begin: 0, end: 1),
+                      duration: const Duration(milliseconds: 600),
+                      curve: Curves.easeOutCubic,
+                      builder:
+                          (context, value, child) => Transform.translate(
+                            offset: Offset(0, 20 * (1 - value)),
+                            child: Opacity(
+                              opacity: value,
+                              child: _buildInputField(
+                                controller: _budgetDescriptionController,
+                                label: 'Budget Description',
+                                hint:
+                                    'Describe the purpose and scope of this budget',
+                                iconData: Icons.description,
+                                maxLines: 4,
+                                focusNode: _budgetDescriptionFocus,
+                                validator: (value) {
+                                  if (value?.trim().isEmpty ?? true) {
+                                    return 'Budget description is required';
+                                  }
+                                  if (value!.trim().length < 10) {
+                                    return 'Please provide a more detailed description (at least 10 characters)';
+                                  }
+                                  return null;
+                                },
+                              ),
+                            ),
+                          ),
                     ),
                   ),
                 ],
@@ -655,53 +908,80 @@ class _CreateBudgetPageState extends State<CreateBudgetPage> with SingleTickerPr
               Column(
                 children: [
                   // Budget amount
-                  _buildInputField(
-                    controller: _budgetAmountController,
-                    label: 'Budget Amount',
-                    hint: 'Enter budget amount',
-                    iconData: Icons.attach_money,
-                    keyboardType: TextInputType.numberWithOptions(decimal: true),
-                    focusNode: _budgetAmountFocus,
-                    nextFocus: _budgetDescriptionFocus,
-                    validator: (value) {
-                      if (value?.trim().isEmpty ?? true) {
-                        return 'Budget amount is required';
-                      }
-                      
-                      if (_budgetAmount == null) {
-                        return 'Please enter a valid number';
-                      }
-                      
-                      if (_budgetAmount! <= 0) {
-                        return 'Budget amount must be greater than zero';
-                      }
-                      
-                      if (_budgetAmount! > 10000000) {
-                        return 'Budget amount cannot exceed \$10,000,000';
-                      }
-                      
-                      return null;
-                    },
+                  TweenAnimationBuilder<double>(
+                    tween: Tween(begin: 0, end: 1),
+                    duration: const Duration(milliseconds: 500),
+                    curve: Curves.easeOutCubic,
+                    builder:
+                        (context, value, child) => Transform.translate(
+                          offset: Offset(0, 20 * (1 - value)),
+                          child: Opacity(
+                            opacity: value,
+                            child: _buildInputField(
+                              controller: _budgetAmountController,
+                              label: 'Budget Amount',
+                              hint: 'Enter budget amount',
+                              iconData: Icons.attach_money,
+                              keyboardType: TextInputType.numberWithOptions(
+                                decimal: true,
+                              ),
+                              focusNode: _budgetAmountFocus,
+                              nextFocus: _budgetDescriptionFocus,
+                              validator: (value) {
+                                if (value?.trim().isEmpty ?? true) {
+                                  return 'Budget amount is required';
+                                }
+
+                                if (_budgetAmount == null) {
+                                  return 'Please enter a valid number';
+                                }
+
+                                if (_budgetAmount! <= 0) {
+                                  return 'Budget amount must be greater than zero';
+                                }
+
+                                if (_budgetAmount! > 10000000) {
+                                  return 'Budget amount cannot exceed ₱10,000,000';
+                                }
+
+                                return null;
+                              },
+                            ),
+                          ),
+                        ),
                   ),
                   const SizedBox(height: 20),
-                  
+
                   // Budget description
-                  _buildInputField(
-                    controller: _budgetDescriptionController,
-                    label: 'Budget Description',
-                    hint: 'Describe the purpose and scope of this budget',
-                    iconData: Icons.description,
-                    maxLines: 4,
-                    focusNode: _budgetDescriptionFocus,
-                    validator: (value) {
-                      if (value?.trim().isEmpty ?? true) {
-                        return 'Budget description is required';
-                      }
-                      if (value!.trim().length < 10) {
-                        return 'Please provide a more detailed description (at least 10 characters)';
-                      }
-                      return null;
-                    },
+                  TweenAnimationBuilder<double>(
+                    tween: Tween(begin: 0, end: 1),
+                    duration: const Duration(milliseconds: 600),
+                    curve: Curves.easeOutCubic,
+                    builder:
+                        (context, value, child) => Transform.translate(
+                          offset: Offset(0, 20 * (1 - value)),
+                          child: Opacity(
+                            opacity: value,
+                            child: _buildInputField(
+                              controller: _budgetDescriptionController,
+                              label: 'Budget Description',
+                              hint:
+                                  'Describe the purpose and scope of this budget',
+                              iconData: Icons.description,
+                              maxLines: 4,
+                              focusNode: _budgetDescriptionFocus,
+                              validator: (value) {
+                                if (value?.trim().isEmpty ?? true) {
+                                  return 'Budget description is required';
+                                }
+                                if (value!.trim().length < 10) {
+                                  return 'Please provide a more detailed description (at least 10 characters)';
+                                }
+                                return null;
+                              },
+                            ),
+                          ),
+                        ),
                   ),
                 ],
               ),
@@ -710,9 +990,14 @@ class _CreateBudgetPageState extends State<CreateBudgetPage> with SingleTickerPr
       ),
     );
   }
-  
-  Widget _buildAuthorizedSpendersStep({bool isDesktop = false, bool isTablet = false}) {
+
+  Widget _buildAuthorizedSpendersStep({
+    Key? key,
+    bool isDesktop = false,
+    bool isTablet = false,
+  }) {
     return Card(
+      key: key,
       elevation: 2,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       child: Padding(
@@ -723,19 +1008,31 @@ class _CreateBudgetPageState extends State<CreateBudgetPage> with SingleTickerPr
             _buildSectionHeader(
               icon: Icons.people,
               title: 'Authorized Spenders',
-              subtitle: 'Select users who will be authorized to create expenses under this budget',
-              trailing: Text(
-                '${_selectedSpenderIds.length} selected',
-                style: const TextStyle(
-                  fontWeight: FontWeight.bold,
-                  color: Colors.white,
+              subtitle:
+                  'Select users who will be authorized to create expenses under this budget',
+              trailing: AnimatedContainer(
+                duration: const Duration(milliseconds: 300),
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color:
+                      _selectedSpenderIds.isEmpty
+                          ? Colors.red
+                          : AppTheme.primaryColor,
+                  borderRadius: BorderRadius.circular(12),
                 ),
-                textAlign: TextAlign.center,
+                child: Text(
+                  '${_selectedSpenderIds.length} selected',
+                  style: const TextStyle(
+                    fontWeight: FontWeight.bold,
+                    color: Colors.white,
+                    fontSize: 12,
+                  ),
+                ),
               ),
               trailingBackgroundColor: AppTheme.primaryColor,
             ),
             const SizedBox(height: 20),
-            
+
             // Search field
             TextField(
               controller: _searchController,
@@ -749,19 +1046,23 @@ class _CreateBudgetPageState extends State<CreateBudgetPage> with SingleTickerPr
                 ),
                 filled: true,
                 fillColor: Colors.grey[50],
-                contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-                suffixIcon: _searchQuery.isNotEmpty
-                    ? IconButton(
-                        icon: const Icon(Icons.clear),
-                        onPressed: () {
-                          _searchController.clear();
-                        },
-                      )
-                    : null,
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 14,
+                ),
+                suffixIcon:
+                    _searchQuery.isNotEmpty
+                        ? IconButton(
+                          icon: const Icon(Icons.clear),
+                          onPressed: () {
+                            _searchController.clear();
+                          },
+                        )
+                        : null,
               ),
             ),
             const SizedBox(height: 16),
-            
+
             // Select/deselect all buttons
             if (_availableSpenders.isNotEmpty)
               Row(
@@ -769,10 +1070,14 @@ class _CreateBudgetPageState extends State<CreateBudgetPage> with SingleTickerPr
                   TextButton.icon(
                     onPressed: () {
                       setState(() {
-                        _selectedSpenderIds = _availableSpenders
-                            .map((spender) => spender['account_id'] as String)
-                            .toList();
+                        _selectedSpenderIds =
+                            _availableSpenders
+                                .map(
+                                  (spender) => spender['account_id'] as String,
+                                )
+                                .toList();
                       });
+                      HapticFeedback.lightImpact();
                     },
                     icon: const Icon(Icons.select_all, size: 18),
                     label: const Text('Select All'),
@@ -786,6 +1091,7 @@ class _CreateBudgetPageState extends State<CreateBudgetPage> with SingleTickerPr
                       setState(() {
                         _selectedSpenderIds.clear();
                       });
+                      HapticFeedback.lightImpact();
                     },
                     icon: const Icon(Icons.deselect, size: 18),
                     label: const Text('Clear All'),
@@ -796,22 +1102,19 @@ class _CreateBudgetPageState extends State<CreateBudgetPage> with SingleTickerPr
                 ],
               ),
             const SizedBox(height: 16),
-            
+
             // No spenders message
-            if (_availableSpenders.isEmpty)
-              _buildEmptySpendersMessage(),
-            
+            if (_availableSpenders.isEmpty) _buildEmptySpendersMessage(),
+
             // Spenders grid/list
             if (_availableSpenders.isNotEmpty)
-              isDesktop
-                ? _buildSpendersGrid()
-                : _buildSpendersList(),
+              isDesktop ? _buildSpendersGrid() : _buildSpendersList(),
           ],
         ),
       ),
     );
   }
-  
+
   Widget _buildSpendersGrid() {
     return GridView.builder(
       shrinkWrap: true,
@@ -826,12 +1129,21 @@ class _CreateBudgetPageState extends State<CreateBudgetPage> with SingleTickerPr
       itemBuilder: (context, index) {
         final spender = _filteredSpenders[index];
         final isSelected = _selectedSpenderIds.contains(spender['account_id']);
-        
-        return _buildSpenderCard(spender, isSelected);
+
+        return TweenAnimationBuilder<double>(
+          tween: Tween(begin: 0, end: 1),
+          duration: Duration(milliseconds: 200 + (index * 50)),
+          curve: Curves.easeOutCubic,
+          builder:
+              (context, value, child) => Transform.scale(
+                scale: value,
+                child: _buildSpenderCard(spender, isSelected),
+              ),
+        );
       },
     );
   }
-  
+
   Widget _buildSpendersList() {
     return ListView.builder(
       shrinkWrap: true,
@@ -840,15 +1152,27 @@ class _CreateBudgetPageState extends State<CreateBudgetPage> with SingleTickerPr
       itemBuilder: (context, index) {
         final spender = _filteredSpenders[index];
         final isSelected = _selectedSpenderIds.contains(spender['account_id']);
-        
-        return Padding(
-          padding: const EdgeInsets.only(bottom: 8),
-          child: _buildSpenderCard(spender, isSelected),
+
+        return TweenAnimationBuilder<double>(
+          tween: Tween(begin: 0, end: 1),
+          duration: Duration(milliseconds: 200 + (index * 50)),
+          curve: Curves.easeOutCubic,
+          builder:
+              (context, value, child) => Transform.translate(
+                offset: Offset(0, 20 * (1 - value)),
+                child: Opacity(
+                  opacity: value,
+                  child: Padding(
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: _buildSpenderCard(spender, isSelected),
+                  ),
+                ),
+              ),
         );
       },
     );
   }
-  
+
   Widget _buildEmptySpendersMessage() {
     return Container(
       width: double.infinity,
@@ -860,11 +1184,7 @@ class _CreateBudgetPageState extends State<CreateBudgetPage> with SingleTickerPr
       ),
       child: Column(
         children: [
-          Icon(
-            Icons.people_outline,
-            size: 48,
-            color: Colors.grey[400],
-          ),
+          Icon(Icons.people_outline, size: 48, color: Colors.grey[400]),
           const SizedBox(height: 12),
           Text(
             'No authorized spenders available',
@@ -877,17 +1197,14 @@ class _CreateBudgetPageState extends State<CreateBudgetPage> with SingleTickerPr
           const SizedBox(height: 8),
           Text(
             'Contact your administrator to create Authorized Spender accounts.',
-            style: TextStyle(
-              fontSize: 14,
-              color: AppTheme.textSecondary,
-            ),
+            style: TextStyle(fontSize: 14, color: AppTheme.textSecondary),
             textAlign: TextAlign.center,
           ),
         ],
       ),
     );
   }
-  
+
   Widget _buildSpenderCard(Map<String, dynamic> spender, bool isSelected) {
     return Material(
       color: isSelected ? AppTheme.primaryLightColor : Colors.grey[50],
@@ -901,9 +1218,11 @@ class _CreateBudgetPageState extends State<CreateBudgetPage> with SingleTickerPr
               _selectedSpenderIds.add(spender['account_id']);
             }
           });
+          HapticFeedback.selectionClick();
         },
         borderRadius: BorderRadius.circular(10),
-        child: Container(
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 200),
           padding: const EdgeInsets.all(12),
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(10),
@@ -928,6 +1247,7 @@ class _CreateBudgetPageState extends State<CreateBudgetPage> with SingleTickerPr
                         _selectedSpenderIds.remove(spender['account_id']);
                       }
                     });
+                    HapticFeedback.selectionClick();
                   },
                   activeColor: AppTheme.primaryColor,
                   shape: RoundedRectangleBorder(
@@ -936,23 +1256,25 @@ class _CreateBudgetPageState extends State<CreateBudgetPage> with SingleTickerPr
                 ),
               ),
               const SizedBox(width: 12),
-              
+
               // Avatar
               CircleAvatar(
                 radius: 20,
-                backgroundColor: isSelected 
-                    ? AppTheme.primaryColor.withOpacity(0.2) 
-                    : Colors.grey[300],
+                backgroundColor:
+                    isSelected
+                        ? AppTheme.primaryColor.withOpacity(0.2)
+                        : Colors.grey[300],
                 child: Text(
                   (spender['name'] ?? 'U')[0].toUpperCase(),
                   style: TextStyle(
-                    color: isSelected ? AppTheme.primaryColor : Colors.grey[700],
+                    color:
+                        isSelected ? AppTheme.primaryColor : Colors.grey[700],
                     fontWeight: FontWeight.bold,
                   ),
                 ),
               ),
               const SizedBox(width: 12),
-              
+
               // User info
               Expanded(
                 child: Column(
@@ -962,8 +1284,12 @@ class _CreateBudgetPageState extends State<CreateBudgetPage> with SingleTickerPr
                     Text(
                       spender['name'] ?? 'Unknown User',
                       style: TextStyle(
-                        fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-                        color: isSelected ? AppTheme.primaryColor : AppTheme.textPrimary,
+                        fontWeight:
+                            isSelected ? FontWeight.bold : FontWeight.normal,
+                        color:
+                            isSelected
+                                ? AppTheme.primaryColor
+                                : AppTheme.textPrimary,
                       ),
                       overflow: TextOverflow.ellipsis,
                     ),
@@ -972,9 +1298,10 @@ class _CreateBudgetPageState extends State<CreateBudgetPage> with SingleTickerPr
                       spender['email'] ?? '',
                       style: TextStyle(
                         fontSize: 12,
-                        color: isSelected 
-                            ? AppTheme.primaryColor.withOpacity(0.8) 
-                            : AppTheme.textSecondary,
+                        color:
+                            isSelected
+                                ? AppTheme.primaryColor.withOpacity(0.8)
+                                : AppTheme.textSecondary,
                       ),
                       overflow: TextOverflow.ellipsis,
                     ),
@@ -984,9 +1311,10 @@ class _CreateBudgetPageState extends State<CreateBudgetPage> with SingleTickerPr
                         spender['contact_number'],
                         style: TextStyle(
                           fontSize: 12,
-                          color: isSelected 
-                              ? AppTheme.primaryColor.withOpacity(0.8) 
-                              : AppTheme.textSecondary,
+                          color:
+                              isSelected
+                                  ? AppTheme.primaryColor.withOpacity(0.8)
+                                  : AppTheme.textSecondary,
                         ),
                         overflow: TextOverflow.ellipsis,
                       ),
@@ -1000,9 +1328,14 @@ class _CreateBudgetPageState extends State<CreateBudgetPage> with SingleTickerPr
       ),
     );
   }
-  
-  Widget _buildReviewStep({bool isDesktop = false, bool isTablet = false}) {
+
+  Widget _buildReviewStep({
+    Key? key,
+    bool isDesktop = false,
+    bool isTablet = false,
+  }) {
     return Card(
+      key: key,
       elevation: 2,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       child: Padding(
@@ -1013,178 +1346,236 @@ class _CreateBudgetPageState extends State<CreateBudgetPage> with SingleTickerPr
             _buildSectionHeader(
               icon: Icons.fact_check,
               title: 'Review Budget Details',
-              subtitle: 'Please review the information below before creating the budget',
+              subtitle:
+                  'Please review the information below before creating the budget',
             ),
             const SizedBox(height: 24),
-            
+
             // Budget Information
-            Container(
-              padding: const EdgeInsets.all(20),
-              decoration: BoxDecoration(
-                color: Colors.grey[50],
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: Colors.grey[200]!),
-              ),
-              child: Column(
-                children: [
-                  _buildReviewItem(
-                    icon: Icons.title,
-                    label: 'Budget Name',
-                    value: _budgetNameController.text,
+            TweenAnimationBuilder<double>(
+              tween: Tween(begin: 0, end: 1),
+              duration: const Duration(milliseconds: 400),
+              curve: Curves.easeOutCubic,
+              builder:
+                  (context, value, child) => Transform.translate(
+                    offset: Offset(0, 20 * (1 - value)),
+                    child: Opacity(
+                      opacity: value,
+                      child: Container(
+                        padding: const EdgeInsets.all(20),
+                        decoration: BoxDecoration(
+                          color: Colors.grey[50],
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: Colors.grey[200]!),
+                        ),
+                        child: Column(
+                          children: [
+                            _buildReviewItem(
+                              icon: Icons.title,
+                              label: 'Budget Name',
+                              value: _budgetNameController.text,
+                            ),
+                            const Divider(height: 24),
+
+                            _buildReviewItem(
+                              icon: Icons.attach_money,
+                              label: 'Budget Amount',
+                              value: _budgetAmountController.text,
+                            ),
+                            const Divider(height: 24),
+
+                            _buildReviewItem(
+                              icon: Icons.description,
+                              label: 'Budget Description',
+                              value: _budgetDescriptionController.text,
+                              isMultiLine: true,
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
                   ),
-                  const Divider(height: 24),
-                  
-                  _buildReviewItem(
-                    icon: Icons.attach_money,
-                    label: 'Budget Amount',
-                    value: _budgetAmountController.text,
-                  ),
-                  const Divider(height: 24),
-                  
-                  _buildReviewItem(
-                    icon: Icons.description,
-                    label: 'Budget Description',
-                    value: _budgetDescriptionController.text,
-                    isMultiLine: true,
-                  ),
-                ],
-              ),
             ),
             const SizedBox(height: 20),
-            
+
             // Selected Spenders
-            Container(
-              padding: const EdgeInsets.all(20),
-              decoration: BoxDecoration(
-                color: Colors.grey[50],
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: Colors.grey[200]!),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Icon(
-                        Icons.people,
-                        color: AppTheme.primaryColor,
-                        size: 20,
-                      ),
-                      const SizedBox(width: 8),
-                      Text(
-                        'Selected Spenders (${_selectedSpenderIds.length})',
-                        style: const TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.bold,
+            TweenAnimationBuilder<double>(
+              tween: Tween(begin: 0, end: 1),
+              duration: const Duration(milliseconds: 500),
+              curve: Curves.easeOutCubic,
+              builder:
+                  (context, value, child) => Transform.translate(
+                    offset: Offset(0, 20 * (1 - value)),
+                    child: Opacity(
+                      opacity: value,
+                      child: Container(
+                        padding: const EdgeInsets.all(20),
+                        decoration: BoxDecoration(
+                          color: Colors.grey[50],
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: Colors.grey[200]!),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                Icon(
+                                  Icons.people,
+                                  color: AppTheme.primaryColor,
+                                  size: 20,
+                                ),
+                                const SizedBox(width: 8),
+                                Text(
+                                  'Selected Spenders (${_selectedSpenderIds.length})',
+                                  style: const TextStyle(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 16),
+
+                            // Show selected spenders
+                            Wrap(
+                              spacing: 8,
+                              runSpacing: 8,
+                              children:
+                                  _availableSpenders
+                                      .where(
+                                        (spender) => _selectedSpenderIds
+                                            .contains(spender['account_id']),
+                                      )
+                                      .map(
+                                        (spender) => Chip(
+                                          avatar: CircleAvatar(
+                                            backgroundColor:
+                                                AppTheme.primaryLightColor,
+                                            child: Text(
+                                              (spender['name'] ?? 'U')[0]
+                                                  .toUpperCase(),
+                                              style: TextStyle(
+                                                color: AppTheme.primaryColor,
+                                                fontWeight: FontWeight.bold,
+                                                fontSize: 12,
+                                              ),
+                                            ),
+                                          ),
+                                          label: Text(
+                                            spender['name'] ?? 'Unknown User',
+                                          ),
+                                          backgroundColor: Colors.white,
+                                          shape: RoundedRectangleBorder(
+                                            borderRadius: BorderRadius.circular(
+                                              16,
+                                            ),
+                                            side: BorderSide(
+                                              color: Colors.grey[300]!,
+                                            ),
+                                          ),
+                                        ),
+                                      )
+                                      .toList(),
+                            ),
+
+                            if (_selectedSpenderIds.isEmpty)
+                              Container(
+                                padding: const EdgeInsets.all(12),
+                                decoration: BoxDecoration(
+                                  color: Colors.red[50],
+                                  borderRadius: BorderRadius.circular(8),
+                                  border: Border.all(color: Colors.red[200]!),
+                                ),
+                                child: Row(
+                                  children: [
+                                    Icon(
+                                      Icons.warning,
+                                      color: Colors.red[700],
+                                      size: 18,
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Expanded(
+                                      child: Text(
+                                        'Please select at least one authorized spender',
+                                        style: TextStyle(
+                                          color: Colors.red[700],
+                                          fontSize: 14,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                          ],
                         ),
                       ),
-                    ],
-                  ),
-                  const SizedBox(height: 16),
-                  
-                  // Show selected spenders
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: _availableSpenders
-                        .where((spender) => 
-                            _selectedSpenderIds.contains(spender['account_id']))
-                        .map((spender) => Chip(
-                          avatar: CircleAvatar(
-                            backgroundColor: AppTheme.primaryLightColor,
-                            child: Text(
-                              (spender['name'] ?? 'U')[0].toUpperCase(),
-                              style: TextStyle(
-                                color: AppTheme.primaryColor,
-                                fontWeight: FontWeight.bold,
-                                fontSize: 12,
-                              ),
-                            ),
-                          ),
-                          label: Text(spender['name'] ?? 'Unknown User'),
-                          backgroundColor: Colors.white,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(16),
-                            side: BorderSide(color: Colors.grey[300]!),
-                          ),
-                        ))
-                        .toList(),
-                  ),
-                  
-                  if (_selectedSpenderIds.isEmpty)
-                    Container(
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: Colors.red[50],
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(color: Colors.red[200]!),
-                      ),
-                      child: Row(
-                        children: [
-                          Icon(Icons.warning, color: Colors.red[700], size: 18),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: Text(
-                              'Please select at least one authorized spender',
-                              style: TextStyle(
-                                color: Colors.red[700],
-                                fontSize: 14,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
                     ),
-                ],
-              ),
+                  ),
             ),
-            
+
             const SizedBox(height: 20),
-            
+
             // Processing information
-            Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: Colors.blue[50],
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: Colors.blue[200]!),
-              ),
-              child: Row(
-                children: [
-                  Icon(Icons.info_outline, color: Colors.blue[700], size: 20),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Next Steps',
-                          style: TextStyle(
-                            fontWeight: FontWeight.bold,
-                            color: Colors.blue[700],
-                            fontSize: 14,
-                          ),
+            TweenAnimationBuilder<double>(
+              tween: Tween(begin: 0, end: 1),
+              duration: const Duration(milliseconds: 600),
+              curve: Curves.easeOutCubic,
+              builder:
+                  (context, value, child) => Transform.translate(
+                    offset: Offset(0, 20 * (1 - value)),
+                    child: Opacity(
+                      opacity: value,
+                      child: Container(
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          color: Colors.blue[50],
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: Colors.blue[200]!),
                         ),
-                        const SizedBox(height: 4),
-                        Text(
-                          'Once created, the budget will be in "Pending for Approval" status. Budget Managers will review and approve it before expenses can be created.',
-                          style: TextStyle(
-                            fontSize: 13,
-                            color: Colors.blue[700],
-                          ),
+                        child: Row(
+                          children: [
+                            Icon(
+                              Icons.info_outline,
+                              color: Colors.blue[700],
+                              size: 20,
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    'Next Steps',
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      color: Colors.blue[700],
+                                      fontSize: 14,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    'Once created, the budget will be in "Pending for Approval" status. Budget Managers will review and approve it before expenses can be created.',
+                                    style: TextStyle(
+                                      fontSize: 13,
+                                      color: Colors.blue[700],
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
                         ),
-                      ],
+                      ),
                     ),
                   ),
-                ],
-              ),
             ),
           ],
         ),
       ),
     );
   }
-  
+
   Widget _buildReviewItem({
     required IconData icon,
     required String label,
@@ -1192,13 +1583,10 @@ class _CreateBudgetPageState extends State<CreateBudgetPage> with SingleTickerPr
     bool isMultiLine = false,
   }) {
     return Row(
-      crossAxisAlignment: isMultiLine ? CrossAxisAlignment.start : CrossAxisAlignment.center,
+      crossAxisAlignment:
+          isMultiLine ? CrossAxisAlignment.start : CrossAxisAlignment.center,
       children: [
-        Icon(
-          icon,
-          color: AppTheme.primaryColor,
-          size: 20,
-        ),
+        Icon(icon, color: AppTheme.primaryColor, size: 20),
         const SizedBox(width: 16),
         Expanded(
           child: Column(
@@ -1206,10 +1594,7 @@ class _CreateBudgetPageState extends State<CreateBudgetPage> with SingleTickerPr
             children: [
               Text(
                 label,
-                style: TextStyle(
-                  fontSize: 14,
-                  color: Colors.grey[600],
-                ),
+                style: TextStyle(fontSize: 14, color: Colors.grey[600]),
               ),
               const SizedBox(height: 4),
               Text(
@@ -1231,12 +1616,12 @@ class _CreateBudgetPageState extends State<CreateBudgetPage> with SingleTickerPr
       ],
     );
   }
-  
+
   Widget _buildInfoPanel({bool isTablet = false, bool isMobile = false}) {
     final contentPadding = isMobile ? 16.0 : 20.0;
-    
+
     Widget content;
-    
+
     switch (_currentStep) {
       case 0:
         content = Column(
@@ -1245,24 +1630,27 @@ class _CreateBudgetPageState extends State<CreateBudgetPage> with SingleTickerPr
             _buildInfoItem(
               icon: Icons.title,
               title: 'Budget Name',
-              description: 'Choose a clear and descriptive name that identifies the purpose of the budget.',
+              description:
+                  'Choose a clear and descriptive name that identifies the purpose of the budget.',
             ),
             const SizedBox(height: 16),
             _buildInfoItem(
               icon: Icons.attach_money,
               title: 'Budget Amount',
-              description: 'The total amount allocated for this budget. Expenses cannot exceed this amount.',
+              description:
+                  'The total amount allocated for this budget. Expenses cannot exceed this amount.',
             ),
             const SizedBox(height: 16),
             _buildInfoItem(
               icon: Icons.description,
               title: 'Budget Description',
-              description: 'Provide detailed information about the purpose, scope, and intended use of this budget.',
+              description:
+                  'Provide detailed information about the purpose, scope, and intended use of this budget.',
             ),
           ],
         );
         break;
-        
+
       case 1:
         content = Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -1270,24 +1658,27 @@ class _CreateBudgetPageState extends State<CreateBudgetPage> with SingleTickerPr
             _buildInfoItem(
               icon: Icons.people,
               title: 'Authorized Spenders',
-              description: 'Select users who will be able to create and manage expenses for this budget.',
+              description:
+                  'Select users who will be able to create and manage expenses for this budget.',
             ),
             const SizedBox(height: 16),
             _buildInfoItem(
               icon: Icons.security,
               title: 'Access Control',
-              description: 'Only selected users will be able to create expenses against this budget.',
+              description:
+                  'Only selected users will be able to create expenses against this budget.',
             ),
             const SizedBox(height: 16),
             _buildInfoItem(
               icon: Icons.search,
               title: 'Search',
-              description: 'Use the search field to find specific users by name or email.',
+              description:
+                  'Use the search field to find specific users by name or email.',
             ),
           ],
         );
         break;
-        
+
       case 2:
         content = Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -1295,28 +1686,31 @@ class _CreateBudgetPageState extends State<CreateBudgetPage> with SingleTickerPr
             _buildInfoItem(
               icon: Icons.approval,
               title: 'Approval Process',
-              description: 'After creation, the budget will require approval from a Budget Manager before it can be used.',
+              description:
+                  'After creation, the budget will require approval from a Budget Manager before it can be used.',
             ),
             const SizedBox(height: 16),
             _buildInfoItem(
               icon: Icons.access_time,
               title: 'Processing Time',
-              description: 'Budget approval times may vary. You will be notified when your budget is approved or if revisions are required.',
+              description:
+                  'Budget approval times may vary. You will be notified when your budget is approved or if revisions are required.',
             ),
             const SizedBox(height: 16),
             _buildInfoItem(
               icon: Icons.edit,
               title: 'Revisions',
-              description: 'If your budget is marked for revision, you can update it and resubmit for approval.',
+              description:
+                  'If your budget is marked for revision, you can update it and resubmit for approval.',
             ),
           ],
         );
         break;
-        
+
       default:
         content = Container();
     }
-    
+
     return Card(
       elevation: 2,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
@@ -1344,8 +1738,11 @@ class _CreateBudgetPageState extends State<CreateBudgetPage> with SingleTickerPr
               ],
             ),
             const SizedBox(height: 16),
-            content,
-            
+            AnimatedSwitcher(
+              duration: const Duration(milliseconds: 300),
+              child: content,
+            ),
+
             if (isTablet || isMobile) ...[
               const SizedBox(height: 16),
               const Divider(),
@@ -1357,7 +1754,7 @@ class _CreateBudgetPageState extends State<CreateBudgetPage> with SingleTickerPr
       ),
     );
   }
-  
+
   Widget _buildBudgetProcessInfo() {
     return Container(
       padding: const EdgeInsets.all(16),
@@ -1396,7 +1793,7 @@ class _CreateBudgetPageState extends State<CreateBudgetPage> with SingleTickerPr
       ),
     );
   }
-  
+
   Widget _buildProcessStep({
     required int number,
     required String description,
@@ -1416,16 +1813,17 @@ class _CreateBudgetPageState extends State<CreateBudgetPage> with SingleTickerPr
             color: isComplete ? Colors.green : Colors.blue[700],
           ),
           child: Center(
-            child: isComplete
-                ? const Icon(Icons.check, color: Colors.white, size: 14)
-                : Text(
-                    number.toString(),
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.bold,
-                      fontSize: 12,
+            child:
+                isComplete
+                    ? const Icon(Icons.check, color: Colors.white, size: 14)
+                    : Text(
+                      number.toString(),
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 12,
+                      ),
                     ),
-                  ),
           ),
         ),
         const SizedBox(width: 12),
@@ -1436,10 +1834,7 @@ class _CreateBudgetPageState extends State<CreateBudgetPage> with SingleTickerPr
             children: [
               Text(
                 description,
-                style: TextStyle(
-                  color: Colors.blue[800],
-                  fontSize: 13,
-                ),
+                style: TextStyle(color: Colors.blue[800], fontSize: 13),
               ),
               if (!isLast)
                 Container(
@@ -1454,7 +1849,7 @@ class _CreateBudgetPageState extends State<CreateBudgetPage> with SingleTickerPr
       ],
     );
   }
-  
+
   Widget _buildInfoItem({
     required IconData icon,
     required String title,
@@ -1469,11 +1864,7 @@ class _CreateBudgetPageState extends State<CreateBudgetPage> with SingleTickerPr
             color: AppTheme.primaryLightColor,
             borderRadius: BorderRadius.circular(8),
           ),
-          child: Icon(
-            icon,
-            color: AppTheme.primaryColor,
-            size: 16,
-          ),
+          child: Icon(icon, color: AppTheme.primaryColor, size: 16),
         ),
         const SizedBox(width: 12),
         Expanded(
@@ -1490,10 +1881,7 @@ class _CreateBudgetPageState extends State<CreateBudgetPage> with SingleTickerPr
               const SizedBox(height: 4),
               Text(
                 description,
-                style: TextStyle(
-                  fontSize: 13,
-                  color: Colors.grey[600],
-                ),
+                style: TextStyle(fontSize: 13, color: Colors.grey[600]),
               ),
             ],
           ),
@@ -1501,7 +1889,7 @@ class _CreateBudgetPageState extends State<CreateBudgetPage> with SingleTickerPr
       ],
     );
   }
-  
+
   Widget _buildSectionHeader({
     required IconData icon,
     required String title,
@@ -1517,11 +1905,7 @@ class _CreateBudgetPageState extends State<CreateBudgetPage> with SingleTickerPr
             color: AppTheme.primaryLightColor,
             borderRadius: BorderRadius.circular(12),
           ),
-          child: Icon(
-            icon,
-            color: AppTheme.primaryColor,
-            size: 24,
-          ),
+          child: Icon(icon, color: AppTheme.primaryColor, size: 24),
         ),
         const SizedBox(width: 16),
         Expanded(
@@ -1539,15 +1923,12 @@ class _CreateBudgetPageState extends State<CreateBudgetPage> with SingleTickerPr
               const SizedBox(height: 4),
               Text(
                 subtitle,
-                style: TextStyle(
-                  fontSize: 14,
-                  color: AppTheme.textSecondary,
-                ),
+                style: TextStyle(fontSize: 14, color: AppTheme.textSecondary),
               ),
             ],
           ),
         ),
-        if (trailing != null) 
+        if (trailing != null)
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
             decoration: BoxDecoration(
@@ -1559,7 +1940,7 @@ class _CreateBudgetPageState extends State<CreateBudgetPage> with SingleTickerPr
       ],
     );
   }
-  
+
   Widget _buildInputField({
     required TextEditingController controller,
     required String label,
@@ -1577,15 +1958,10 @@ class _CreateBudgetPageState extends State<CreateBudgetPage> with SingleTickerPr
         labelText: label,
         hintText: hint,
         prefixIcon: Icon(iconData),
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(10),
-        ),
+        border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(10),
-          borderSide: BorderSide(
-            color: AppTheme.primaryColor,
-            width: 2,
-          ),
+          borderSide: BorderSide(color: AppTheme.primaryColor, width: 2),
         ),
         contentPadding: const EdgeInsets.symmetric(
           horizontal: 16,
@@ -1596,9 +1972,12 @@ class _CreateBudgetPageState extends State<CreateBudgetPage> with SingleTickerPr
       maxLines: maxLines,
       focusNode: focusNode,
       validator: validator,
-      onFieldSubmitted: nextFocus != null ? (_) {
-        FocusScope.of(context).requestFocus(nextFocus);
-      } : null,
+      onFieldSubmitted:
+          nextFocus != null
+              ? (_) {
+                FocusScope.of(context).requestFocus(nextFocus);
+              }
+              : null,
     );
   }
 }
@@ -1607,13 +1986,13 @@ class _CreateBudgetPageState extends State<CreateBudgetPage> with SingleTickerPr
 class LoadingIndicator extends StatelessWidget {
   final String message;
   final bool useCustomIndicator;
-  
+
   const LoadingIndicator({
     Key? key,
     required this.message,
     this.useCustomIndicator = false,
   }) : super(key: key);
-  
+
   @override
   Widget build(BuildContext context) {
     if (useCustomIndicator) {
@@ -1636,7 +2015,7 @@ class LoadingIndicator extends StatelessWidget {
                     height: 80,
                     color: AppTheme.primaryColor.withOpacity(0.2),
                   ),
-                  
+
                   // Middle circle
                   RotatingCircle(
                     duration: const Duration(seconds: 3),
@@ -1645,7 +2024,7 @@ class LoadingIndicator extends StatelessWidget {
                     height: 60,
                     color: AppTheme.primaryColor.withOpacity(0.5),
                   ),
-                  
+
                   // Inner circle
                   Container(
                     width: 40,
@@ -1678,22 +2057,17 @@ class LoadingIndicator extends StatelessWidget {
         ),
       );
     }
-    
+
     // Simple default loading indicator
     return Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          CircularProgressIndicator(
-            color: AppTheme.primaryColor,
-          ),
+          CircularProgressIndicator(color: AppTheme.primaryColor),
           const SizedBox(height: 16),
           Text(
             message,
-            style: TextStyle(
-              fontSize: 16,
-              color: AppTheme.textPrimary,
-            ),
+            style: TextStyle(fontSize: 16, color: AppTheme.textPrimary),
           ),
         ],
       ),
@@ -1722,16 +2096,15 @@ class RotatingCircle extends StatefulWidget {
   State<RotatingCircle> createState() => _RotatingCircleState();
 }
 
-class _RotatingCircleState extends State<RotatingCircle> with SingleTickerProviderStateMixin {
+class _RotatingCircleState extends State<RotatingCircle>
+    with SingleTickerProviderStateMixin {
   late AnimationController _controller;
 
   @override
   void initState() {
     super.initState();
-    _controller = AnimationController(
-      vsync: this,
-      duration: widget.duration,
-    )..repeat();
+    _controller = AnimationController(vsync: this, duration: widget.duration)
+      ..repeat();
   }
 
   @override
@@ -1746,19 +2119,17 @@ class _RotatingCircleState extends State<RotatingCircle> with SingleTickerProvid
       animation: _controller,
       builder: (context, child) {
         return Transform.rotate(
-          angle: widget.clockwise 
-              ? _controller.value * 2 * math.pi 
-              : -_controller.value * 2 * math.pi,
+          angle:
+              widget.clockwise
+                  ? _controller.value * 2 * math.pi
+                  : -_controller.value * 2 * math.pi,
           child: Container(
             width: widget.width,
             height: widget.height,
             decoration: BoxDecoration(
               color: Colors.transparent,
               shape: BoxShape.circle,
-              border: Border.all(
-                color: widget.color,
-                width: 4,
-              ),
+              border: Border.all(color: widget.color, width: 4),
             ),
           ),
         );
@@ -1766,4 +2137,3 @@ class _RotatingCircleState extends State<RotatingCircle> with SingleTickerProvid
     );
   }
 }
-
